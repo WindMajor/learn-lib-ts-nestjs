@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// 用户模块
+// ============================================
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  email         String    @unique @db.VarChar(100)
+  passwordHash  String    @map("password_hash") @db.VarChar(255)
+  realName      String?   @map("real_name") @db.VarChar(50)
+  role          Role      @default(USER)
+  departmentId  Int?      @map("department_id")
+  department    Department? @relation(fields: [departmentId], references: [id])
+
+  // 关联：用户创建的报表
+  reports       Report[]
+  // 关联：用户的审批记录
+  approvals     Approval[]
+  // 关联：用户的通知
+  notifications Notification[]
+
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ============================================
+// 部门模块
+// ============================================
+model Department {
+  id            Int       @id @default(autoincrement())
+  name          String    @unique @db.VarChar(100)
+  parentId      Int?      @map("parent_id")
+  parent        Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children      Department[] @relation("DepartmentHierarchy")
+  leaderId      Int?      @map("leader_id")
+  leader        User?     @relation(fields: [leaderId], references: [id])
+  users         User[]
+  description   String?   @db.VarChar(500)
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("departments")
+}
+
+// ============================================
+// 数据上报模块
+// ============================================
+model Report {
+  id            Int       @id @default(autoincrement())
+  title         String    @db.VarChar(200)
+  category      ReportCategory @default(DATA_SUMMARY)
+  content       Json      @db.JsonB
+  status        ReportStatus @default(DRAFT)
+  submitterId   Int       @map("submitter_id")
+  submitter     User      @relation(fields: [submitterId], references: [id])
+  departmentId  Int       @map("department_id")
+  department    Department @relation(fields: [departmentId], references: [id])
+
+  // 关联审批流
+  approvals     Approval[]
+  // 关联附件
+  attachments   ReportAttachment[]
+
+  submittedAt   DateTime? @map("submitted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("reports")
+}
+
+model ReportAttachment {
+  id            Int       @id @default(autoincrement())
+  reportId       Int       @map("report_id")
+  report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fileName      String    @map("file_name") @db.VarChar(255)
+  fileSize      Int       @map("file_size")
+  fileUrl       String    @map("file_url") @db.VarChar(500)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("report_attachments")
+}
+
+// ============================================
+// 审批流模块
+// ============================================
+model Approval {
+  id            Int       @id @default(autoincrement())
+  reportId       Int       @map("report_id")
+  report        Report    @relation(fields: [reportId], references: [id])
+  approverId    Int       @map("approver_id")
+  approver      User      @relation(fields: [approverId], references: [id])
+  step          Int       @default(1)
+  status        ApprovalStatus @default(PENDING)
+  comment       String?   @db.VarChar(500)
+  approvedAt    DateTime? @map("approved_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("approvals")
+}
+
+// ============================================
+// 通知模块
+// ============================================
+model Notification {
+  id            Int       @id @default(autoincrement())
+  userId        Int       @map("user_id")
+  user          User      @relation(fields: [userId], references: [id])
+  title         String    @db.VarChar(200)
+  content       String    @db.Text
+  type          NotificationType @default(SYSTEM)
+  isRead        Boolean   @default(false) @map("is_read")
+  metadata      Json?     @db.JsonB
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
+// ============================================
+// 枚举定义
+// ============================================
+enum Role { ADMIN DEPARTMENT_MANAGER USER VIEWER }
+enum ReportCategory { DATA_SUMMARY FINANCE_INCOME HR_PERSONNEL PROJECT_PROGRESS }
+enum ReportStatus { DRAFT SUBMITTED APPROVED REJECTED }
+enum ApprovalStatus { PENDING APPROVED REJECTED }
+enum NotificationType { SYSTEM APPROVAL_REMINDER REPORT_SUBMITTED }

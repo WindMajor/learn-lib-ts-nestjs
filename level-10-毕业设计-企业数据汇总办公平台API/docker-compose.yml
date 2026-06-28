@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: enterprise-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nestjs_user
+      POSTGRES_PASSWORD: nestjs_pass
+      POSTGRES_DB: enterprise_platform
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nestjs_user -d enterprise_platform"]
+      interval: 5s; timeout: 5s; retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: enterprise-redis
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    command: redis-server --appendonly yes --requirepass redis_pass
+    volumes: [redisdata:/data]
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,31 @@
+{
+  "name": "level-07-auth",
+  "version": "1.0.0",
+  "description": "Level 07: JWT认证 + Passport + 自定义装饰器 + RBAC",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/passport": "^10.0.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "class-validator": "^0.14.1",
+    "class-transformer": "^0.5.1",
+    "reflect-metadata": "^0.1.14",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.3.0",
+    "@nestjs/schematics": "^10.1.0",
+    "@types/passport-jwt": "^4.0.0",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

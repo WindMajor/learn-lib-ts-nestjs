@@ -1,0 +1,44 @@
+version: "3.9"
+
+# 全局基础服务——PostgreSQL + Redis
+# 各关卡（Level 04+）和毕业设计均可复用
+# 启动: docker-compose up -d
+# 停止: docker-compose down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nestjs-learn-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nestjs_user
+      POSTGRES_PASSWORD: nestjs_pass
+      POSTGRES_DB: nestjs_learn
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nestjs_user -d nestjs_learn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nestjs-learn-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass redis_pass
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
