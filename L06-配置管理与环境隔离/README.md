@@ -20,7 +20,7 @@
 ### 1. 启动应用
 
 ```bash
-cd level-06-配置管理与环境隔离
+cd L06-配置管理与环境隔离
 npm install
 npm run start:dev
 ```

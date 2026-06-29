@@ -40,7 +40,7 @@ Controller (HTTP 适配)
 cd ../.. && docker-compose up -d postgres
 
 # 2. 安装依赖
-cd level-04-服务仓储与数据库集成
+cd L04-服务仓储与数据库集成
 npm install
 
 # 3. 生成 Prisma Client

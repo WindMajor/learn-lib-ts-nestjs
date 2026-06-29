@@ -1,7 +1,7 @@
 {
-  "name": "level-07-auth",
+  "name": "L06-config-management",
   "version": "1.0.0",
-  "description": "Level 07: JWT认证 + Passport + 自定义装饰器 + RBAC",
+  "description": "Level 06: 配置管理与环境隔离",
   "private": true,
   "scripts": {
     "build": "nest build",
@@ -14,12 +14,8 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/jwt": "^10.2.0",
-    "@nestjs/passport": "^10.0.3",
-    "passport": "^0.7.0",
-    "passport-jwt": "^4.0.1",
-    "class-validator": "^0.15.1",
-    "class-transformer": "^0.5.1",
+    "@nestjs/config": "^3.1.0",
+    "joi": "^17.12.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -28,7 +24,6 @@
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
-    "@types/passport-jwt": "^4.0.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

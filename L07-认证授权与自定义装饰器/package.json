@@ -1,14 +1,12 @@
 {
-  "name": "level-02-controller-route-pipe",
+  "name": "L07-auth",
   "version": "1.0.0",
-  "description": "Level 02: NestJS 控制器、路由与管道",
+  "description": "Level 07: JWT认证 + Passport + 自定义装饰器 + RBAC",
   "private": true,
   "scripts": {
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\""
   },
@@ -16,8 +14,12 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "class-transformer": "^0.5.1",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/passport": "^10.0.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
     "class-validator": "^0.15.1",
+    "class-transformer": "^0.5.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
@@ -26,6 +28,7 @@
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
+    "@types/passport-jwt": "^4.0.0",
     "@types/node": "^24.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

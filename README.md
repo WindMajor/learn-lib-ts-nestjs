@@ -24,17 +24,17 @@
 
 | 关卡 | 主题 | 核心能力 | 预估时间 |
 |------|------|---------|---------|
-| [Level 00](./level-00-前置学习/) | 前置学习：NestJS 全面入门 | 项目结构、模块/控制器/服务、AOP 全链路、数据库/认证/Vue3联调 | 8~12 h |
-| [Level 01](./level-01-模块系统与依赖注入容器/) | 模块系统与依赖注入容器 | IoC 容器直觉、Provider 注册、Scope 理解 | 60 min |
-| [Level 02](./level-02-控制器路由与管道/) | 控制器、路由与管道 | 请求参数绑定、内置 Pipe、自定义 Pipe | 45 min |
-| [Level 03](./level-03-DTO验证与类型安全/) | DTO、验证与类型安全 | class-validator、ValidationPipe 配置、嵌套验证 | 60 min |
-| [Level 04](./level-04-服务仓储与数据库集成/) | 服务、仓储与数据库集成 | Drizzle 集成、事务、软删除、审计字段 | 75 min |
-| [Level 05](./level-05-AOP切面/) | AOP 切面：Guard/Interceptor/Filter | AOP 执行链、全局 vs 局部、统一响应 | 90 min |
-| [Level 06](./level-06-配置管理与环境隔离/) | 配置管理与环境隔离 | ConfigModule、Joi 校验、多环境 | 45 min |
-| [Level 07](./level-07-认证授权与自定义装饰器/) | 认证、授权与自定义装饰器 | JWT + Passport、RBAC、自定义装饰器、Reflector | 75 min |
-| [Level 08](./level-08-缓存队列与外部集成/) | 缓存、队列与外部集成 | Redis 缓存、Bull 队列、定时任务、EventEmitter | 60 min |
-| [Level 09](./level-09-测试策略与可测试性/) | 测试策略与可测试性 | 单元测试、集成测试、E2E、测试隔离 | 60 min |
-| [Level 10](./level-10-毕业设计-企业数据汇总办公平台API/) | 毕业设计：企业内部数据办公平台 | 完整企业级 API 交付 | 90+ min |
+| [Level 00](./L00-前置学习/) | 前置学习：NestJS 全面入门 | 项目结构、模块/控制器/服务、AOP 全链路、数据库/认证/Vue3联调 | 8~12 h |
+| [Level 01](./L01-模块系统与依赖注入容器/) | 模块系统与依赖注入容器 | IoC 容器直觉、Provider 注册、Scope 理解 | 60 min |
+| [Level 02](./L02-控制器路由与管道/) | 控制器、路由与管道 | 请求参数绑定、内置 Pipe、自定义 Pipe | 45 min |
+| [Level 03](./L03-DTO验证与类型安全/) | DTO、验证与类型安全 | class-validator、ValidationPipe 配置、嵌套验证 | 60 min |
+| [Level 04](./L04-服务仓储与数据库集成/) | 服务、仓储与数据库集成 | Drizzle 集成、事务、软删除、审计字段 | 75 min |
+| [Level 05](./L05-AOP切面/) | AOP 切面：Guard/Interceptor/Filter | AOP 执行链、全局 vs 局部、统一响应 | 90 min |
+| [Level 06](./L06-配置管理与环境隔离/) | 配置管理与环境隔离 | ConfigModule、Joi 校验、多环境 | 45 min |
+| [Level 07](./L07-认证授权与自定义装饰器/) | 认证、授权与自定义装饰器 | JWT + Passport、RBAC、自定义装饰器、Reflector | 75 min |
+| [Level 08](./L08-缓存队列与外部集成/) | 缓存、队列与外部集成 | Redis 缓存、Bull 队列、定时任务、EventEmitter | 60 min |
+| [Level 09](./L09-测试策略与可测试性/) | 测试策略与可测试性 | 单元测试、集成测试、E2E、测试隔离 | 60 min |
+| [Level 10](./L10-毕业设计-企业数据汇总办公平台API/) | 毕业设计：企业内部数据办公平台 | 完整企业级 API 交付 | 90+ min |
 
 ---
 
@@ -53,7 +53,7 @@ Docker (Level 04+ 用于 PostgreSQL/Redis)
 
 ```bash
 # 克隆后进入任意关卡
-cd level-01-模块系统与依赖注入容器
+cd L01-模块系统与依赖注入容器
 
 # 安装依赖
 pnpm install
@@ -101,17 +101,17 @@ learn-lib-ts-nestjs/
 ├── README.md                          # 本文件
 ├── docker-compose.yml                 # 全局 PG + Redis
 ├── pnpm-workspace.yaml                # pnpm monorepo 配置
-├── level-00-前置学习/                  # 第 0 关（前置入门）
-├── level-01-模块系统与依赖注入容器/    # 第 1 关
-├── level-02-控制器路由与管道/          # 第 2 关
-├── level-03-DTO验证与类型安全/         # 第 3 关
-├── level-04-服务仓储与数据库集成/      # 第 4 关
-├── level-05-AOP切面/                  # 第 5 关
-├── level-06-配置管理与环境隔离/        # 第 6 关
-├── level-07-认证授权与自定义装饰器/    # 第 7 关
-├── level-08-缓存队列与外部集成/        # 第 8 关
-├── level-09-测试策略与可测试性/        # 第 9 关
-└── level-10-毕业设计-企业数据汇总办公平台API/  # 第 10 关（最终关卡）
+├── L00-前置学习/                  # 第 0 关（前置入门）
+├── L01-模块系统与依赖注入容器/    # 第 1 关
+├── L02-控制器路由与管道/          # 第 2 关
+├── L03-DTO验证与类型安全/         # 第 3 关
+├── L04-服务仓储与数据库集成/      # 第 4 关
+├── L05-AOP切面/                  # 第 5 关
+├── L06-配置管理与环境隔离/        # 第 6 关
+├── L07-认证授权与自定义装饰器/    # 第 7 关
+├── L08-缓存队列与外部集成/        # 第 8 关
+├── L09-测试策略与可测试性/        # 第 9 关
+└── L10-毕业设计-企业数据汇总办公平台API/  # 第 10 关（最终关卡）
 ```
 
 ---

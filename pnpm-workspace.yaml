@@ -1,5 +1,5 @@
 packages:
-  - 'level-*'
+  - 'L*'
 allowBuilds:
   '@scarf/scarf': false
   bcrypt: true

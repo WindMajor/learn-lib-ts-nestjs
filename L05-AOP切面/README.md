@@ -73,7 +73,7 @@ NestJS 的 Interceptor 返回 `Observable`（基于 RxJS），这是与所有其
 ## 运行命令
 
 ```bash
-cd level-05-AOP切面
+cd L05-AOP切面
 npm install && npm run start:dev
 ```
 

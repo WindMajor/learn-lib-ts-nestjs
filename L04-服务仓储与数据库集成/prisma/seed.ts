@@ -1,4 +1,4 @@
-// level-04 seed 已迁移至 Drizzle ORM
+// L04 seed 已迁移至 Drizzle ORM
 // 运行: npx ts-node prisma/seed.ts
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";

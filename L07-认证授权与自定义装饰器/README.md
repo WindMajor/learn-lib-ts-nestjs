@@ -20,7 +20,7 @@
 ## 快速开始
 
 ```bash
-cd level-07-认证授权与自定义装饰器
+cd L07-认证授权与自定义装饰器
 npm install
 cp .env.example .env   # 配置 JWT 密钥
 npm run start:dev

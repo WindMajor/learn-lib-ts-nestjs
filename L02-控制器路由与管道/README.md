@@ -74,7 +74,7 @@ HTTP 请求到达
 ## 运行命令
 
 ```bash
-cd level-02-控制器路由与管道
+cd L02-控制器路由与管道
 npm install
 npm run start:dev
 ```
