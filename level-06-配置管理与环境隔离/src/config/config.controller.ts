@@ -11,7 +11,7 @@ export class ConfigController {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * GET /config —— 查看当前应用配置（仅开发环境可用！
+   * GET /config —— 查看当前应用配置（仅开发环境可用！）
    *
    * WARNING: 生产环境绝对不要暴露配置！
    */

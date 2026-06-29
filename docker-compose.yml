@@ -1,9 +1,7 @@
-version: "3.9"
-
 # 全局基础服务——PostgreSQL + Redis
 # 各关卡（Level 04+）和毕业设计均可复用
-# 启动: docker-compose up -d
-# 停止: docker-compose down -v
+# 启动: docker compose up -d
+# 停止: docker compose down -v
 
 services:
   postgres:

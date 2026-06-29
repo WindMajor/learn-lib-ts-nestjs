@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import configuration from "./config/configuration";
+import { ConfigController } from "./config/config.controller";
 import * as Joi from "joi";
 
 /**
@@ -30,6 +31,7 @@ import * as Joi from "joi";
  *   编译期/运行期双重校验——比 NestJS 更安全
  */
 @Module({
+  controllers: [ConfigController],
   imports: [
     ConfigModule.forRoot({
       // 是否全局可用（任何模块无需 import 即可注入 ConfigService）

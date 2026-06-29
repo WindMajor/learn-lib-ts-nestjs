@@ -16,7 +16,7 @@ async function bootstrap() {
 
   await app.listen(3000);
   logger.log("Level 04 已启动: http://localhost:3000");
-  logger.log("🔬 本关演示 Repository 模式 + Prisma 事务 + 软删除");
+  logger.log("🔬 本关演示 Repository 模式 + Drizzle 事务 + 软删除");
   logger.log("  GET    /cats             — 查询所有猫（自动过滤已删除）");
   logger.log("  GET    /cats/:id         — 查询指定猫");
   logger.log("  POST   /cats             — 创建猫");

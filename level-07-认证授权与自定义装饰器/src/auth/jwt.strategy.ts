@@ -34,20 +34,26 @@
  *   - 如果密钥不一致 → Passport 返回 401 "invalid signature"
  *   - jwtFromRequest 有多种提取方式：ExtractJwt.fromAuthHeaderAsBearerToken() 是最常见的
  */
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
+
+const logger = new Logger("JwtStrategy");
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.warn("⚠️ JWT_SECRET 未设置！使用默认开发密钥（仅用于本地开发）");
+    }
     super({
       // WHAT: 从 Authorization: Bearer <token> 中提取 JWT
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       // WHAT: 是否忽略过期检查——生产环境必须 false
       ignoreExpiration: false,
-      // WHAT: 验证签名的密钥
-      secretOrKey: process.env.JWT_SECRET || "dev-secret",
+      // WHAT: 验证签名的密钥——必须与 AuthModule 中签发用的密钥一致
+      secretOrKey: jwtSecret || "dev-secret-fallback-for-local-dev-only",
     });
   }
 

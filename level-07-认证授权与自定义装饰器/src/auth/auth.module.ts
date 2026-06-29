@@ -1,9 +1,18 @@
-import { Module } from "@nestjs/common";
+import { Module, Logger } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { JwtStrategy } from "./jwt.strategy";
 import { AuthService } from "./auth.service";
 import { AuthController } from "./auth.controller";
+
+const logger = new Logger("AuthModule");
+
+// WHAT: 从环境变量获取 JWT 密钥——生产环境必须设置
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  logger.warn("⚠️ JWT_SECRET 未设置！使用默认开发密钥（仅用于本地开发）");
+}
+const secret = jwtSecret || "dev-secret-fallback-for-local-dev-only";
 
 /**
  * WHAT: AuthModule——认证授权模块
@@ -20,7 +29,7 @@ import { AuthController } from "./auth.controller";
   imports: [
     PassportModule.register({ defaultStrategy: "jwt" }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || "dev-secret",
+      secret,
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
     }),
   ],
