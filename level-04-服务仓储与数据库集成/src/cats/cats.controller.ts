@@ -5,7 +5,10 @@ import {
 import { CatsService } from "./cats.service";
 import { CreateCatDto } from "./dto/create-cat.dto";
 import { UpdateCatDto } from "./dto/update-cat.dto";
-import type { Cat } from "@prisma/client";
+// WHAT: Cat 类型从 Drizzle ORM 推导，此处用于返回值标注
+// WHY: Drizzle 不生成 Client，类型直接从 schema.ts 的 $inferSelect 推导
+import type { cats } from "../db/schema";
+type Cat = typeof cats.$inferSelect;
 
 @Controller("cats")
 export class CatsController {

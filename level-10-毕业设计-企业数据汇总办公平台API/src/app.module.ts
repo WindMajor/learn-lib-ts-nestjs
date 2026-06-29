@@ -5,7 +5,7 @@ import { redisStore } from "cache-manager-redis-yet";
 import { ScheduleModule } from "@nestjs/schedule";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { BullModule } from "@nestjs/bull";
-import { PrismaModule } from "./database/prisma.module";
+import { DrizzleModule } from "./db/drizzle.module";
 import { AuthModule } from "./auth/auth.module";
 import { UserModule } from "./modules/users/user.module";
 import { DepartmentModule } from "./modules/departments/department.module";
@@ -53,7 +53,7 @@ import * as Joi from "joi";
     EventEmitterModule.forRoot(),
 
     // 业务模块
-    PrismaModule,
+    DrizzleModule,
     AuthModule,
     UserModule,
     DepartmentModule,

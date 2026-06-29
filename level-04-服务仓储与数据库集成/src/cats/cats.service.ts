@@ -1,6 +1,16 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { CatsRepository } from "./cats.repository";
-import type { Cat } from "@prisma/client";
+// WHAT: Drizzle 类型——手动定义 Cat 接口（生产环境应从 schema.ts 导入 $inferSelect 类型）
+// WHY: Drizzle 不生成 Client 类，类型直接通过 TypeScript 推导，更透明
+interface Cat {
+  id: number;
+  name: string;
+  age: number;
+  breed: string;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 @Injectable()
 export class CatsService {

@@ -1,180 +1,132 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
-import type { Cat, Prisma } from "@prisma/client";
+import { eq, isNull, isNotNull, desc } from "drizzle-orm";
+import { DrizzleService } from "../db/drizzle.service";
+import { cats, catOnUsers } from "../db/schema";
 
 /**
- * WHAT: CatsRepository——数据访问层，封装所有数据库操作
+ * WHAT: CatsRepository——数据访问层（Drizzle ORM 版本）
  *
- * 【核心原理——Repository 模式的价值】
- *   1. 隔离数据库细节：Service 不需要知道用的是 Prisma 还是 TypeORM
- *   2. 集中查询逻辑：软删除过滤、默认排序、分页 都沉淀在 Repository
- *   3. 可测试性：mock CatsRepository 比 mock PrismaClient 容易得多
- *   4. 复用性：不同 Service 可以共享同一个 Repository
+ * 【Drizzle API 关键差异】
+ *   Prisma: prisma.cat.findMany({ where: { deletedAt: null } })
+ *   Drizzle: db.select().from(cats).where(isNull(cats.deletedAt))
  *
- * 【对比 Spring Data JPA】
- *   Spring 的 Repository 是接口 + 方法名约定（findByNameAndAge）:
- *     interface CatRepository extends JpaRepository<Cat, Long> {
- *       List<Cat> findByNameAndAge(String name, int age);
- *     }
- *   NestJS 的 Repository 是手写类——更灵活但不那么"魔法"
+ *   Drizzle 更接近原生 SQL——select/from/where/orderBy 链式调用
+ *   而没有 Prisma 的嵌套对象查询语法。
  *
- * 【对比 Go】
- *   Go 的 Repository 通常是一个 struct：
- *     type CatRepository struct { db *gorm.DB }
- *     func (r *CatRepository) FindAll() []Cat { ... }
- *   与 NestJS 的写法几乎一样——但 Go 没有 IoC 容器，需要手动创建
- *
- * WARNING: @Injectable() 必须加上——Repository 需要被 IoC 容器管理
- *   如果忘记 → "Nest can't resolve dependencies of the CatsService"
+ * 【操作符对比】
+ *   Prisma          Drizzle
+ *   { name: "Mimi" }  → eq(cats.name, "Mimi")
+ *   { not: null }     → isNotNull(cats.deletedAt)
+ *   { deletedAt: null } → isNull(cats.deletedAt)
+ *   orderBy: { createdAt: "desc" } → orderBy(desc(cats.createdAt))
  */
+
+// WHAT: 类型别名——Drizzle 自动推导的 Row 类型
+// WHY: 使用 InferSelectModel 获得完整的类型安全
+type Cat = typeof cats.$inferSelect;
+
 @Injectable()
 export class CatsRepository {
   private readonly logger = new Logger(CatsRepository.name);
 
-  /**
-   * WHAT: 构造函数注入 PrismaService
-   * WHY: Repository 不直接实例化 PrismaClient，而是通过注入获得
-   *   这样可以在测试中注入 mock PrismaService
-   */
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly drizzle: DrizzleService) {}
 
   // ====================================
-  // 查询操作（自动过滤已软删除的记录）
+  // 查询操作（自动过滤软删除记录）
   // ====================================
-
-  /**
-   * WHAT: 查询所有未删除的猫
-   *
-   * 【软删除的核心查询】
-   *   deletedAt: null → 未被删除
-   *   每次查询都加上这个条件——相当于"默认过滤已删除"
-   *
-   * 【对比 TypeORM】
-   *   TypeORM 的 SoftDelete 自动在查询中添加 WHERE deleted_at IS NULL
-   *   不需要手动写——但需要 @DeleteDateColumn() 装饰器
-   *
-   * 【对比 Spring JPA + Hibernate】
-   *   @SQLDelete(sql = "UPDATE cats SET deleted_at = NOW() WHERE id = ?")
-   *   @Where(clause = "deleted_at IS NULL")
-   *   几乎一样的机制——都是"软删除 + 查询自动过滤"
-   */
   async findAll(onlyActive = true): Promise<Cat[]> {
     this.logger.log(`查询猫列表 (onlyActive=${onlyActive})`);
-    return this.prisma.cat.findMany({
-      where: onlyActive ? { deletedAt: null } : {},
-      orderBy: { createdAt: "desc" },
-    });
+    return this.drizzle.db
+      .select()
+      .from(cats)
+      .where(onlyActive ? isNull(cats.deletedAt) : undefined)
+      .orderBy(desc(cats.createdAt));
   }
 
-  /**
-   * WHAT: 按 ID 查询——同时验证软删除状态
-   */
   async findById(id: number): Promise<Cat | null> {
-    return this.prisma.cat.findFirst({
-      where: { id, deletedAt: null },
-    });
+    const results = await this.drizzle.db
+      .select()
+      .from(cats)
+      .where(eq(cats.id, id))
+      .limit(1);
+    return results[0] ?? null;
   }
 
-  /**
-   * WHAT: 查询已删除的猫（用于审计/恢复）
-   */
   async findDeleted(): Promise<Cat[]> {
-    return this.prisma.cat.findMany({
-      where: { deletedAt: { not: null } },
-    });
+    return this.drizzle.db
+      .select()
+      .from(cats)
+      .where(isNotNull(cats.deletedAt))
+      .orderBy(desc(cats.deletedAt));
   }
 
   // ====================================
   // 写操作
   // ====================================
-
-  async create(data: Prisma.CatCreateInput): Promise<Cat> {
+  async create(data: { name: string; age: number; breed: string }): Promise<Cat> {
     this.logger.log(`创建猫: ${data.name}`);
-    return this.prisma.cat.create({ data });
+    const results = await this.drizzle.db
+      .insert(cats)
+      .values(data)
+      .returning();
+    return results[0];
   }
 
-  async update(id: number, data: Prisma.CatUpdateInput): Promise<Cat> {
+  async update(
+    id: number,
+    data: Partial<{ name: string; age: number; breed: string }>,
+  ): Promise<Cat> {
     this.logger.log(`更新猫 id=${id}`);
-    return this.prisma.cat.update({
-      where: { id },
-      data,
-    });
+    const results = await this.drizzle.db
+      .update(cats)
+      .set(data)
+      .where(eq(cats.id, id))
+      .returning();
+    return results[0];
   }
 
   // ====================================
   // 软删除
   // ====================================
-
-  /**
-   * WHAT: 软删除——设置 deletedAt 时间戳，而非物理删除
-   *
-   * WHY: 商业应用中几乎不物理删除：
-   *   1. 审计合规——保留所有操作记录
-   *   2. 误删恢复——用户可以"撤销"删除
-   *   3. 关联数据保护——关联到被删记录的数据不会出错
-   *
-   * 【对比 Django】
-   *   Django 不内建软删除，需要第三方库如 django-safedelete
-   *
-   * WARNING: 软删除后，所有查询需要加 deletedAt: null 条件
-   *   如果某个查询忘记了这个条件 → 会查出"已删除"的数据
-   *   → 这就是为什么查询逻辑要集中在 Repository 中！
-   */
   async softDelete(id: number): Promise<Cat> {
     this.logger.log(`软删除猫 id=${id}`);
-    return this.prisma.cat.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    const results = await this.drizzle.db
+      .update(cats)
+      .set({ deletedAt: new Date() })
+      .where(eq(cats.id, id))
+      .returning();
+    return results[0];
   }
 
-  /**
-   * WHAT: 恢复已软删除的记录
-   */
   async restore(id: number): Promise<Cat> {
-    return this.prisma.cat.update({
-      where: { id },
-      data: { deletedAt: null },
-    });
+    const results = await this.drizzle.db
+      .update(cats)
+      .set({ deletedAt: null })
+      .where(eq(cats.id, id))
+      .returning();
+    return results[0];
   }
 
   // ====================================
   // 事务操作
   // ====================================
-
-  /**
-   * WHAT: 事务示例——在两个操作之间保持原子性
-   *
-   * 【场景】把猫从一个用户转移到另一个用户
-   *   1. 删除旧的 CatOnUser 关系
-   *   2. 创建新的 CatOnUser 关系
-   *   两步必须在同一个事务中——否则可能"删除了旧关系但新关系没创建成功"
-   *
-   * 【对比 Spring】
-   *   @Transactional
-   *   public void transferCat(int catId, int fromUserId, int toUserId) {
-   *     catOnUserRepo.deleteByCatIdAndUserId(catId, fromUserId);
-   *     catOnUserRepo.save(new CatOnUser(catId, toUserId));
-   *   }
-   *   Prisma 同样的逻辑但需要显式使用 tx 而非 this
-   */
   async transferOwnership(
     catId: number,
     fromUserId: number,
     toUserId: number,
   ): Promise<void> {
-    // WARNING: 必须使用 this.prisma.$transaction，
-    // 不能用外部变量——因为需要事务内的 Client
-    await this.prisma.$transaction(async (tx) => {
+    // Drizzle 事务语法：db.transaction(async (tx) => { ... })
+    // 与 Prisma 的 $transaction 语法类似——都是回调模式
+    await this.drizzle.db.transaction(async (tx) => {
       // 步骤 1: 删除旧关系
-      await tx.catOnUser.delete({
-        where: { catId_userId: { catId, userId: fromUserId } },
-      });
+      await tx
+        .delete(catOnUsers)
+        .where(eq(catOnUsers.catId, catId));
 
       // 步骤 2: 创建新关系
-      await tx.catOnUser.create({
-        data: { catId, userId: toUserId },
-      });
+      await tx
+        .insert(catOnUsers)
+        .values({ catId, userId: toUserId });
     });
 
     this.logger.log(

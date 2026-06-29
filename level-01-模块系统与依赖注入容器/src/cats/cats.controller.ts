@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Body, Logger } from "@nestjs/common";
 import { CatsService } from "./cats.service";
-import { Cat } from "./cats.interface";
+import type { Cat } from "./cats.interface";
 
 /**
  * WHAT: 控制器——处理 HTTP 请求的入口点

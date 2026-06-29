@@ -1,46 +1,51 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../../database/prisma.service";
-import { CreateReportDto, UpdateReportDto } from "./dto/report.dto";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { eq, desc } from 'drizzle-orm';
+import { DrizzleService } from '../../db/drizzle.service';
+import { reports } from '../../db/schema';
 
 @Injectable()
 export class ReportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: DrizzleService) {}
 
   async findAll() {
-    return this.prisma.report.findMany({
-      include: { submitter: { select: { id: true, realName: true } }, department: { select: { id: true, name: true } }, _count: { select: { approvals: true, attachments: true } } },
-      orderBy: { createdAt: "desc" },
-    });
+    return this.db.db.select()
+      .from(reports).orderBy(desc(reports.createdAt));
   }
 
   async findById(id: number) {
-    const report = await this.prisma.report.findUnique({
-      where: { id }, include: { submitter: { select: { id: true, realName: true, username: true } }, department: true, approvals: { include: { approver: { select: { id: true, realName: true } } } }, attachments: true },
-    });
+    const rows = await this.db.db
+      .select().from(reports).where(eq(reports.id, id)).limit(1);
+    const report = rows[0];
     if (!report) throw new NotFoundException(`报表 id=${id} 不存在`);
     return report;
   }
 
-  async create(dto: CreateReportDto, userId: number) {
-    return this.prisma.report.create({
-      data: { ...dto, submitterId: userId },
-      include: { submitter: { select: { id: true, realName: true } }, department: { select: { id: true, name: true } } },
-    });
+  async create(dto: any, userId: number) {
+    const result = await this.db.db
+      .insert(reports).values({ ...dto, submitterId: userId })
+      .returning();
+    return result[0];
   }
 
   async submit(id: number) {
     await this.findById(id);
-    return this.prisma.report.update({ where: { id }, data: { status: "SUBMITTED", submittedAt: new Date() } });
+    const result = await this.db.db
+      .update(reports)
+      .set({ status: 'SUBMITTED', submittedAt: new Date() })
+      .where(eq(reports.id, id)).returning();
+    return result[0];
   }
 
-  async update(id: number, dto: UpdateReportDto) {
+  async update(id: number, dto: any) {
     await this.findById(id);
-    return this.prisma.report.update({ where: { id }, data: dto });
+    const result = await this.db.db
+      .update(reports).set(dto).where(eq(reports.id, id)).returning();
+    return result[0];
   }
 
   async remove(id: number) {
     await this.findById(id);
-    await this.prisma.report.delete({ where: { id } });
-    return { message: "报表已删除" };
+    await this.db.db.delete(reports).where(eq(reports.id, id));
+    return { message: '报表已删除' };
   }
 }
