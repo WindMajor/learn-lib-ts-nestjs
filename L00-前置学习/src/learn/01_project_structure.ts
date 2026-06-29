@@ -11,7 +11,7 @@
  *   5. 理解 NestJS 与 Express 的底层关系
  *
  * 【与 Express/FastAPI/Spring/Django 的对比提示】
- *   - Express：NestJS 默认底层就是 Express，但包装了模块化架构和 DI 容器
+ *   - Express：NestJS 默认底层就是 Express，但包装了模块化架构和 DI 容器 （Dependency Injection 依赖注入容器）
  *   - FastAPI：两者都大量使用装饰器，但 FastAPI 是函数级管理，NestJS 是类级管理
  *   - Spring：都使用了 DI 容器 + 模块化 + 注解/装饰器，设计理念高度相似
  *   - Django：Django 是「约定优于配置」的大而全框架，NestJS 更灵活、模块边界更清晰
