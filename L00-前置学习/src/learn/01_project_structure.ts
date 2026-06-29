@@ -168,8 +168,7 @@ class UserModule {}
 const isInjectable: boolean =
   Reflect.getMetadata('injectable', UserService) === true;
 const moduleMetadata = Reflect.getMetadata('module', UserModule) as
-  | ModuleMetadata
-  | undefined;
+  ModuleMetadata | undefined;
 console.log('UserService 可注入:', isInjectable);
 console.log('UserModule providers 数量:', moduleMetadata?.providers.length);
 
