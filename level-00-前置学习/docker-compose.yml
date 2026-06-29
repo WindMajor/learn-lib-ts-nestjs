@@ -1,0 +1,50 @@
+# ============================================================
+# NestJS 系统化学习项目 - Docker 编排文件
+# 启动命令：docker compose up -d
+# 停止命令：docker compose down
+# 数据清理：docker compose down -v （删除卷数据）
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # PostgreSQL 16 - 主数据库
+  # 与第12章（数据库集成）和第20章（综合实战）衔接
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: nestjs_learn_postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: nestjs_user
+      POSTGRES_PASSWORD: nestjs_pass
+      POSTGRES_DB: nestjs_learn
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nestjs_user -d nestjs_learn']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # Redis 7 - 缓存 / 队列（可选）
+  # 供第16章（WebSocket）和第17章（队列概念）使用
+  # 如果不需要可注释掉
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: nestjs_learn_redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  pgdata:
+    name: nestjs_learn_pgdata
+  redisdata:
+    name: nestjs_learn_redisdata

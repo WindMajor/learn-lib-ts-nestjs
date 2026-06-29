@@ -1,6 +1,6 @@
 # learn-lib-ts-nestjs：闯关式 NestJS 商业级后端开发
 
-> **目标**：8~10 关内，以"玩框架"的心态打通 NestJS 在企业软件中的核心架构能力。
+> **目标**：11 关内，以"玩框架"的心态打通 NestJS 在企业软件中的核心架构能力。
 > **最终产出**：一个可部署、可交付的完整 REST API 服务——企业内部数据汇总办公平台。
 
 ---
@@ -24,10 +24,11 @@
 
 | 关卡 | 主题 | 核心能力 | 预估时间 |
 |------|------|---------|---------|
+| [Level 00](./level-00-前置学习/) | 前置学习：NestJS 全面入门 | 项目结构、模块/控制器/服务、AOP 全链路、数据库/认证/Vue3联调 | 8~12 h |
 | [Level 01](./level-01-模块系统与依赖注入容器/) | 模块系统与依赖注入容器 | IoC 容器直觉、Provider 注册、Scope 理解 | 60 min |
 | [Level 02](./level-02-控制器路由与管道/) | 控制器、路由与管道 | 请求参数绑定、内置 Pipe、自定义 Pipe | 45 min |
 | [Level 03](./level-03-DTO验证与类型安全/) | DTO、验证与类型安全 | class-validator、ValidationPipe 配置、嵌套验证 | 60 min |
-| [Level 04](./level-04-服务仓储与数据库集成/) | 服务、仓储与数据库集成 | Prisma 集成、事务、软删除、审计字段 | 75 min |
+| [Level 04](./level-04-服务仓储与数据库集成/) | 服务、仓储与数据库集成 | Drizzle 集成、事务、软删除、审计字段 | 75 min |
 | [Level 05](./level-05-AOP切面/) | AOP 切面：Guard/Interceptor/Filter | AOP 执行链、全局 vs 局部、统一响应 | 90 min |
 | [Level 06](./level-06-配置管理与环境隔离/) | 配置管理与环境隔离 | ConfigModule、Joi 校验、多环境 | 45 min |
 | [Level 07](./level-07-认证授权与自定义装饰器/) | 认证、授权与自定义装饰器 | JWT + Passport、RBAC、自定义装饰器、Reflector | 75 min |
@@ -41,7 +42,7 @@
 
 ```bash
 Node.js >= 20.x
-npm >= 10.x
+pnpm >= 8.x
 TypeScript >= 5.3
 Docker (Level 04+ 用于 PostgreSQL/Redis)
 ```
@@ -55,13 +56,13 @@ Docker (Level 04+ 用于 PostgreSQL/Redis)
 cd level-01-模块系统与依赖注入容器
 
 # 安装依赖
-npm install
+pnpm install
 
 # 开发模式启动（热重载）
-npm run start:dev
+pnpm run start:dev
 
 # 运行测试
-npm run test
+pnpm run test
 ```
 
 ---
@@ -99,6 +100,8 @@ npm run test
 learn-lib-ts-nestjs/
 ├── README.md                          # 本文件
 ├── docker-compose.yml                 # 全局 PG + Redis
+├── pnpm-workspace.yaml                # pnpm monorepo 配置
+├── level-00-前置学习/                  # 第 0 关（前置入门）
 ├── level-01-模块系统与依赖注入容器/    # 第 1 关
 ├── level-02-控制器路由与管道/          # 第 2 关
 ├── level-03-DTO验证与类型安全/         # 第 3 关
@@ -115,7 +118,7 @@ learn-lib-ts-nestjs/
 
 ## 通关标准（全局）
 
-完成全部 10 关后，你将能够：
+完成全部 11 关后，你将能够：
 
 - [ ] 独立设计企业级 NestJS 后端架构（模块划分、分层、AOP 切面）
 - [ ] 写出可测试的模块化代码（DI + Mock）
