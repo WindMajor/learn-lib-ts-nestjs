@@ -183,10 +183,10 @@ class UserModule {}
 
 // 验证元数据
 const isInjectable: boolean = Reflect.getMetadata('injectable', UserService) === true;
+console.log('UserService 可注入:', isInjectable); // 输出：UserService 可注入: true
 
 const moduleMetadata = Reflect.getMetadata('module', UserModule) as ModuleMetadata | undefined;
-console.log('UserService 可注入:', isInjectable);
-console.log('UserModule providers 数量:', moduleMetadata?.providers.length);
+console.log('UserModule providers 数量:', moduleMetadata?.providers.length); // 输出：UserModule providers 数量: 1
 
 // ============================================================
 // 示例 4：nest-cli.json 核心配置解读
@@ -200,30 +200,48 @@ console.log('UserModule providers 数量:', moduleMetadata?.providers.length);
 
 interface NestCliConfig {
   /** JSON Schema 引用 */
-  $schema: string;
-  /** 代码生成器的集合：@nestjs/schematics 是官方默认 */
-  collection: string;
+  // $schema 是 JSON 文件的"自述链接"
+  // 它不参与业务逻辑，但让编辑器和工具能够自动完成校验、补全、文档提示，是 JSON 文件从"纯文本"变成"智能配置文件"的关键。
+  $schema: string; // $schema 是 JSON Schema 规范定义的标准字段，所有主流编辑器都支持
+  // 它有一个约定俗成的值："$schema": "https://json.schemastore.org/nest-cli"，是nest new 脚手架自动写入的
+
+  /** 代码生成器的集合： */
+  // collection 指定 NestJS CLI 使用哪套代码生成器模板（Schematics Collection）
+  // @nestjs/schematics 是 NestJS 官方提供的 Angular Schematics 工具包，包含了一整套代码生成模板。
+  collection: string; // 官方默认值 @nestjs/schematics
+
   /** 源代码根目录（相对于项目根目录） */
-  sourceRoot: string;
+  // sourceRoot 指定项目的源代码根目录，通常默认值 sourceRoot: 'src'
+  // 它告诉 NestJS CLI："我的所有业务代码都在 src/ 目录下，从这开始找"。
+  sourceRoot: string; // sourceRoot 的脚手架默认值是 "src"
+
   /** TypeScript 编译器选项 */
   compilerOptions: {
     /** 每次构建前是否删除 dist 目录 */
-    deleteOutDir: boolean;
+    // 但实际开发中强烈建议改为 true，否则会出现"源文件删了，dist 里对应的 .js 还在"的幽灵代码问题。
+    deleteOutDir: boolean; // deleteOutDir 的默认值是 false，默认不会在构建前删除 dist/ 目录，出于安全考虑——不会擅自删除文件
+
     /** Webpack 模式（可选，用于热重载优化） */
-    webpack?: boolean;
+    webpack?: boolean; //webpack 的默认值是 false，默认用 tsc（TypeScript 官方编译器）构建，因为简单、直观、零额外依赖
+
     /** 需要额外编译的资源文件（如 .hbs 模板） */
-    assets?: string[];
+    assets?: string[]; // assets 的默认值是 undefined（不配置），完全可选的选项
+
     /** 监听额外的文件变化 */
-    watchAssets?: boolean;
+    watchAssets?: boolean; // 默认值是 undefined（不配置），完全可选的选项
   };
   /** 代码生成器选项 */
   generateOptions?: {
     /** 生成文件时使用 flat（扁平）风格还是子目录风格 */
-    flat?: boolean;
+    flat?: boolean; // flat 的默认值是 false，默认采用子目录风格（非扁平）
+
     /** 是否跳过生成 spec 测试文件 */
-    spec?: boolean;
+    spec?: boolean; // spec 的默认值是 true，默认会同时生成测试文件
+
     /** 是否跳过生成 import 语句 */
-    skipImport?: boolean;
+    skipImport?: boolean; //skipImport 的默认值是 false，默认会自动添加 import 语句
+    // 自动找到最近的 *.module.ts ，帮你在 module 里加 import { UserService } from ...
+    // 因为NestJS 追求开发效率，帮开发者省事
   };
 }
 
@@ -239,7 +257,17 @@ const mockNestCliConfig: NestCliConfig = {
     spec: true, // 默认生成测试文件
   },
 };
-console.log('nest-cli.json 示例配置:', JSON.stringify(mockNestCliConfig, null, 2));
+console.log('nest-cli.json 示例配置:', JSON.stringify(mockNestCliConfig, null, 2)); // null是不做替换，2是每层缩进2个空格
+
+const obj = { name: 'NestJS', version: 10 };
+console.log(obj); // [object Object]（直接打印看不出内容）
+console.log(JSON.stringify(obj)); // '{"name":"NestJS","version":10}'（紧凑）
+console.log(JSON.stringify(obj, null, 2)); // space: 2 的原理：每深入一层嵌套，就在前面多加 2 × 层级 个空格 + 换行符 \n，形成可读的缩进树。
+// 带缩进的格式化输出：
+// {
+//   "name": "NestJS",
+//   "version": 10
+// }
 
 // ============================================================
 // 示例 5：NestJS 底层适配器切换 —— Express → Fastify
@@ -257,6 +285,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 const bootstrap3 = async (): Promise<void> => {
   // 切换到 Fastify
   const app: NestFastifyApplication = await NestFactory.create<NestFastifyApplication>(MockAppModule, new FastifyAdapter({ logger: true }));
+  // 对比 const app: INestApplication = await NestFactory.create(MockAppModule);
 
   // Fastify 监听端口（与 Express 完全相同的调用方式）
   await app.listen(3000, '0.0.0.0');
@@ -284,7 +313,7 @@ const bootstrap3 = async (): Promise<void> => {
  * │   │   ├── dto/                  # 数据传输对象
  * │   │   │   ├── create-user.dto.ts
  * │   │   │   └── update-user.dto.ts
- * │   │   └── entities/             # 实体（可选，Drizzle 项目使用 schema 定义，不需要单独实体）
+ * │   │   └── entities/             # 实体（可选，TypeORM需要，Drizzle 项目使用 schema 定义，不需要单独实体）
  * │   ├── auth/                     # 认证模块
  * │   ├── common/                   # 公共模块（守卫、拦截器、过滤器、装饰器）
  * │   │   ├── guards/
@@ -318,8 +347,26 @@ const bootstrap3 = async (): Promise<void> => {
  * 【语法点】DocumentBuilder 链式调用
  * 【NestJS 设计意图】代码即文档，减少前后端沟通成本
  */
-import { DocumentBuilder as SwaggerDocBuilder } from '@nestjs/swagger';
+import { DocumentBuilder as SwaggerDocBuilder } from '@nestjs/swagger'; // 它们是同一个东西，只是起了个更语义化的别名
+// DocumentBuilder 太通用了，看一眼不知道是什么文档。这个教学文件里命名为 SwaggerDocBuilder 是为了自文档化——一眼就知道这是拿来构建 Swagger/OpenAPI 文档的。
 
+// 下面的类型体操，步骤1：typeof SwaggerModule.createDocument
+// 取到函数的完整类型
+// 取到的不是一个值，而是一个类型，具体是：(app: INestApplication, config: Omit<OpenAPIObject, 'paths'>, options?: SwaggerDocumentOptions) => OpenAPIObject
+
+// 步骤2：Parameters<typeof SwaggerModule.createDocument>
+// 从函数类型里取到参数列表部分，形成数组
+// 具体是：[INestApplication, Omit<OpenAPIObject, 'paths'>, SwaggerDocumentOptions?]
+
+// 步骤3：Parameters<typeof SwaggerModule.createDocument>[1]
+// 从数组里取索引为1的值
+// 具体是：Omit<OpenAPIObject, 'paths'>
+
+// 步骤4：Omit<Parameters<typeof SwaggerModule.createDocument>[1], ''>
+// Omit 是按键名匹配删除，第二个参数是要删除的键名，当前传的是空字符串，等于啥也找不到
+// 在当前案例里是什么也没做，最终是：Omit<OpenAPIObject, 'paths'>
+
+// 等价于const createSwaggerConfig = (): Omit<OpenAPIObject, 'paths'> => {
 const createSwaggerConfig = (): Omit<Parameters<typeof SwaggerModule.createDocument>[1], ''> => {
   const config = new SwaggerDocBuilder()
     .setTitle('NestJS Learn API')
@@ -392,7 +439,7 @@ console.log('Swagger 配置已创建');
 // import { Get, Post, Controller, Module, Injectable } from '@nestjs/common';
 
 // 引用所有 demo 变量以避免 unused-vars 警告
-void bootstrap1;
+void bootstrap1; //  没有 ()  → 不调用，只是"摸一下"，这是一个哑操作——副作用为零，唯一目的就是让 TypeScript 编译器闭嘴。
 void bootstrap2;
 void bootstrap3;
 void createSwaggerConfig;
