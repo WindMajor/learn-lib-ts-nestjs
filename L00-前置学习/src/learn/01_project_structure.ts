@@ -120,14 +120,33 @@ const Injectable = (): ClassDecorator => {
   return (target: object) => {
     // 在类的原型上存储元数据 —— 「这个类是可注入的」
     Reflect.defineMetadata('injectable', true, target);
-    // 获取构造函数的参数类型（用于 DI 容器自动解析依赖）
-    const paramTypes: unknown[] =
-      (Reflect.getMetadata('design:paramtypes', target) as unknown[]) ?? [];
-    Reflect.defineMetadata('design:paramtypes', paramTypes, target);
-    console.log(
-      `[Injectable] ${(target as { name?: string }).name} 被标记为可注入, 依赖:`,
-      paramTypes,
-    );
+
+    // ⚠️ 【教学示例中的冗余操作】
+    // 下面这段「先取出再放回去」的操作在实际场景中是不必要的：
+    //
+    // 原因：当 tsconfig.json 中启用了 emitDecoratorMetadata: true 时，
+    // TypeScript 编译器会自动为带装饰器的类生成以下元数据：
+    //   - design:type（属性类型）
+    //   - design:paramtypes（构造函数参数类型）← 这里
+    //   - design:returntype（方法返回类型）
+    //
+    // 所以 'design:paramtypes' 在装饰器执行前就已经被 TS 编译器写入了，
+    // 这里 getMetadata 读取到的是编译器自动生成的值。
+    //
+    // ❌ 错误做法：先读取再原样写回（这段代码的问题）
+    const paramTypes: unknown[] = (Reflect.getMetadata('design:paramtypes', target) as unknown[]) ?? [];
+
+    Reflect.defineMetadata('design:paramtypes', paramTypes, target); // 冗余！
+    //
+    // ✅ 正确做法1：只读取，不重复写入
+    // const paramTypes = Reflect.getMetadata('design:paramtypes', target) ?? [];
+    // console.log('依赖类型:', paramTypes); // 直接使用即可
+    //
+    // ✅ 正确做法2：如果要存储处理后的依赖信息，用自定义键
+    // const processed = paramTypes.map(t => analyzeType(t));
+    // Reflect.defineMetadata('custom:dependencies', processed, target);
+
+    console.log(`[Injectable] ${(target as { name?: string }).name} 被标记为可注入, 依赖:`, paramTypes);
   };
 };
 
@@ -142,9 +161,7 @@ interface ModuleMetadata {
 const Module = (metadata: ModuleMetadata): ClassDecorator => {
   return (target: object) => {
     Reflect.defineMetadata('module', metadata, target);
-    console.log(
-      `[Module] ${(target as { name?: string }).name} 模块已注册，provider数量: ${metadata.providers.length}`,
-    );
+    console.log(`[Module] ${(target as { name?: string }).name} 模块已注册，provider数量: ${metadata.providers.length}`);
   };
 };
 
@@ -165,10 +182,9 @@ class UserService {
 class UserModule {}
 
 // 验证元数据
-const isInjectable: boolean =
-  Reflect.getMetadata('injectable', UserService) === true;
-const moduleMetadata = Reflect.getMetadata('module', UserModule) as
-  ModuleMetadata | undefined;
+const isInjectable: boolean = Reflect.getMetadata('injectable', UserService) === true;
+
+const moduleMetadata = Reflect.getMetadata('module', UserModule) as ModuleMetadata | undefined;
 console.log('UserService 可注入:', isInjectable);
 console.log('UserModule providers 数量:', moduleMetadata?.providers.length);
 
@@ -223,10 +239,7 @@ const mockNestCliConfig: NestCliConfig = {
     spec: true, // 默认生成测试文件
   },
 };
-console.log(
-  'nest-cli.json 示例配置:',
-  JSON.stringify(mockNestCliConfig, null, 2),
-);
+console.log('nest-cli.json 示例配置:', JSON.stringify(mockNestCliConfig, null, 2));
 
 // ============================================================
 // 示例 5：NestJS 底层适配器切换 —— Express → Fastify
@@ -243,11 +256,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 
 const bootstrap3 = async (): Promise<void> => {
   // 切换到 Fastify
-  const app: NestFastifyApplication =
-    await NestFactory.create<NestFastifyApplication>(
-      MockAppModule,
-      new FastifyAdapter({ logger: true }),
-    );
+  const app: NestFastifyApplication = await NestFactory.create<NestFastifyApplication>(MockAppModule, new FastifyAdapter({ logger: true }));
 
   // Fastify 监听端口（与 Express 完全相同的调用方式）
   await app.listen(3000, '0.0.0.0');
@@ -311,19 +320,13 @@ const bootstrap3 = async (): Promise<void> => {
  */
 import { DocumentBuilder as SwaggerDocBuilder } from '@nestjs/swagger';
 
-const createSwaggerConfig = (): Omit<
-  Parameters<typeof SwaggerModule.createDocument>[1],
-  ''
-> => {
+const createSwaggerConfig = (): Omit<Parameters<typeof SwaggerModule.createDocument>[1], ''> => {
   const config = new SwaggerDocBuilder()
     .setTitle('NestJS Learn API')
     .setDescription('NestJS 系统化学习项目 API 文档')
     .setVersion('1.0')
     .setContact('开发者', 'https://example.com', 'dev@example.com')
-    .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-      'JWT',
-    )
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'JWT')
     .addTag('users', '用户相关接口')
     .addTag('posts', '文章相关接口')
     .addTag('auth', '认证相关接口')
