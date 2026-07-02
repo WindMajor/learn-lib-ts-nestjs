@@ -34,8 +34,8 @@
  * 【DI 容器行为】NestJS 启动时扫描所有模块，构建模块依赖图，
  *               然后在每个模块内实例化 Provider 并处理依赖关系。
  */
+import { ModuleRef } from '@nestjs/core';
 import { Module, Injectable, Controller, Get } from '@nestjs/common';
-import type { ModuleRef } from '@nestjs/core';
 
 // ---- 模拟依赖类 ----
 @Injectable()
@@ -54,10 +54,14 @@ class PostsService {
 
 @Controller('users')
 class UsersController {
-  // 在实际项目中，这里通过构造函数注入 UsersService
+  // 构造函数的参数中使用private（或 public、protected、readonly）是参数属性的简写写法
+  // 在 NestJS 中，这种写法特别常见：private 确保服务实例是类的私有属性，可以在类的其他方法中通过 this.usersService 访问注入的服务
+  constructor(private usersService: UsersService) {} // 注入 Service
+  // 如果去掉 private，参数就只是普通的构造函数参数，不会自动成为类属性，无法在其他方法中访问。
+
   @Get()
   public findAll(): string[] {
-    return ['user1'];
+    return this.usersService.findAll(); // 调用 Service
   }
 }
 // --------------------
@@ -95,7 +99,7 @@ console.log('AppModule 和 UsersModule 已定义');
 @Injectable()
 class PrivateService {
   public secret(): string {
-    return '只有本模块能访问';
+    return '只有本模块能访问'; // 是下面的IsolatedModule的@Module装饰器里exports里没写导致的
   }
 }
 
@@ -114,16 +118,25 @@ class PublicService {
 class IsolatedModule {}
 
 // 另一个模块
+// import { IsolatedModule } from './isolated.module'; // ES6 导入类定义
+
 @Injectable()
 class ConsumerService {
   // 可以注入 PublicService（因为 IsolatedModule 导出了它）
   // 不能注入 PrivateService（未导出，DI 容器会报错）
 
-  constructor(publicService: PublicService) {
-    // PublicService 被注入但仅作演示，未实际调用
-    void publicService;
+  constructor(private publicService: PublicService) {}
+
+  public getData(): string {
+    return this.publicService.info(); // 实际调用 PublicService 的方法
   }
 }
+
+@Module({
+  imports: [IsolatedModule], // NestJS 注册模块依赖关系
+  providers: [ConsumerService], // 实际项目中一个文件一个类，通过 import 解决依赖，不会遇到"声明前使用"的问题
+})
+class ConsumerModule {}
 
 // ============================================================
 // 示例 3：全局模块 @Global()
@@ -136,17 +149,24 @@ class ConsumerService {
  * 【风险】全局模块过多会导致命名冲突和依赖关系不可追踪，类似全局变量的问题
  */
 
-import { Global } from '@nestjs/common';
+import { Global, Inject } from '@nestjs/common';
 
 @Global() // 标记为全局模块
 @Module({
   providers: [
     {
-      provide: 'DATABASE_CONNECTION',
-      useValue: { connected: true, host: 'localhost', port: 5432 },
+      provide: 'DATABASE_CONNECTION', // ← 注入 token（标识符）
+      useValue: { connected: true, host: 'localhost', port: 5432 }, // ← 提供的值
     },
+    // 这是一段 DI 容器的配置，具体来说是一个 Provider 配置对象。它告诉 NestJS 的依赖注入容器：
+    // 当有人请求 'DATABASE_CONNECTION' 这个 token 时，就给他这个对象 { connected: true, host: 'localhost', port: 5432 }
+    // 通常用于注入常量、配置对象、或简单数据。
+    // 就像是在 DI 容器里注册了一个"全局变量"，但通过依赖注入的方式提供，而不是直接访问全局变量。这样更容易测试和替换。
   ],
-  exports: ['DATABASE_CONNECTION'], // 所有模块都可以注入 'DATABASE_CONNECTION'
+  exports: ['DATABASE_CONNECTION'], // 将 'DATABASE_CONNECTION' 这个 provider 导出，让所有模块都可以注入 'DATABASE_CONNECTION'
+  // 1.providers：在当前模块的 DI 容器中注册 'DATABASE_CONNECTION'
+  // 2.exports：允许其他模块使用这个 provider
+  // 3.@Global()：让这个导出自动对所有模块可见，无需在每个模块的 imports 中声明
 })
 class DatabaseModule {}
 
@@ -155,10 +175,16 @@ class DatabaseModule {}
 class UserRepository {
   // 直接注入全局 Provider，无需在所在模块的 imports 中声明 DatabaseModule
 
-  constructor(db: { connected: boolean; host: string; port: number }) {
-    // DATABASE_CONNECTION 被注入但仅作演示，未实际调用
-    void db;
+  constructor(@Inject('DATABASE_CONNECTION') private db: { connected: boolean; host: string; port: number }) {
+    console.log(this.db.host); // 'localhost'
+    console.log(this.db.port); // 5432
   }
+
+  // ✅ 当 provider 的是字符串（如 'DATABASE_CONNECTION'）时，TypeScript 无法从参数类型推断，必须用 @Inject() 明确指定
+  // constructor(@Inject('DATABASE_CONNECTION') private db: any) {}
+
+  // ✅ 当 provider 的是类时，TypeScript 的类型信息足够让 NestJS 识别，可以省略 @Inject()
+  // constructor(private usersService: UsersService) {}
 }
 
 // ============================================================
@@ -179,28 +205,46 @@ interface DrizzleModuleOptions {
   log?: boolean;
 }
 
-const DRIZZLE_OPTIONS = 'DRIZZLE_OPTIONS';
+// 痛点：如果用静态的 @Module() 装饰器，配置是写死的：
+// ❌ 配置写死，无法根据环境切换
+// @Module({
+//   providers: [{
+//     provide: 'DB',
+//     useValue: { url: 'localhost:5432' }  // 写死了
+//   }]
+// })
+// class DrizzleModule {}
 
-@Module({})
+// 解决：用静态方法 + 动态返回：
+// ✅ 可以根据参数动态生成配置
+// DrizzleModule.forRoot({ url: process.env.DATABASE_URL })
+
+// 为什么还需要 @Module({})：1.标识这是一个 NestJS 模块，让 NestJS 识别这个类是模块；2.可以有静态配置：如果需要，可以写一些固定的配置
+@Module({}) // 这里是空的 @Module({})，这是动态模块的常见写法，因为所有的配置都是通过 forRoot() 动态返回的，不需要在装饰器中写死
 class DrizzleModule {
   /**
+   * NestJS 的动态模块（Dynamic Module）模式，用于创建可配置的模块。
    * forRoot —— 在根模块调用一次，注册全局数据库连接
    */
+  // forRoot 是 NestJS 社区的约定俗成的命名规范，有特定含义。表示在根模块注册一次，全局配置
   public static forRoot(options: DrizzleModuleOptions): DynamicModule {
+    // 1️⃣ 将用户传入的配置注册为 Provider
     const optionsProvider: Provider = {
-      provide: DRIZZLE_OPTIONS,
-      useValue: options,
+      provide: 'DRIZZLE_OPTIONS',
+      useValue: options, // 保存配置对象
     };
 
+    // 2️⃣ 使用工厂函数创建数据库连接
     const connectionProvider: Provider = {
       provide: 'DRIZZLE_CONNECTION',
       useFactory: (opts: DrizzleModuleOptions) => {
         // 实际项目中这里初始化 drizzle + pg Pool
         return { connected: true, url: opts.url, log: opts.log };
       },
-      inject: [DRIZZLE_OPTIONS], // 注入配置 Provider
+      inject: ['DRIZZLE_OPTIONS'], // 注入配置 Provider
     };
 
+    // 3️⃣ 返回动态生成的模块配置
     return {
       module: DrizzleModule, // 模块类本身
       global: true, // 注册为全局模块
@@ -212,6 +256,7 @@ class DrizzleModule {
   /**
    * forFeature —— 在子模块中调用，注册特定实体的 Repository
    */
+  // forFeature是NestJS社区约定的命名规范，表示在功能模块注册，局部配置
   public static forFeature(): DynamicModule {
     return {
       module: DrizzleModule,
@@ -232,9 +277,7 @@ class DrizzleModule {
 
 // 使用方式：
 @Module({
-  imports: [
-    DrizzleModule.forRoot({ url: 'postgresql://...', log: true }), // 根模块注册
-  ],
+  imports: [DrizzleModule.forRoot({ url: 'postgresql://...', log: true })], // 根模块注册
 })
 class RootModule {}
 
@@ -272,16 +315,10 @@ class DynamicService implements NestOnModuleInit {
   }
 
   // 按作用域获取（用于 REQUEST 作用域的 Provider）
-  public async getScopedProvider(
-    contextId: unknown,
-  ): Promise<UsersService | null> {
-    const result = await this.moduleRef.resolve<UsersService>(
-      UsersService,
-      contextId as { id: number },
-      {
-        strict: false, // 非严格模式，Provider 不存在返回 undefined 而不会抛错
-      },
-    );
+  public async getScopedProvider(contextId: unknown): Promise<UsersService | null> {
+    const result = await this.moduleRef.resolve<UsersService>(UsersService, contextId as { id: number }, {
+      strict: false, // 非严格模式，Provider 不存在返回 undefined 而不会抛错
+    });
     return result;
   }
 }
