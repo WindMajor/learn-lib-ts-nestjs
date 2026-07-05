@@ -35,15 +35,17 @@
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 
-// 注：此处 AppModule 是当前示例项目的根模块；生产环境中通常会聚合配置、数据库、认证、业务等多个模块
 import { AppModule } from '../app.module';
+// 注：此处 AppModule 是当前示例项目的根模块；生产环境中通常会聚合配置、数据库、认证、业务等多个模块
 
 const bootstrap1 = async (): Promise<void> => {
-  // NestFactory.create() 返回一个 NestFastifyApplication 或 NestExpressApplication
   const app: INestApplication = await NestFactory.create(AppModule);
+  // NestFactory.create() 返回一个 NestFastifyApplication 或 NestExpressApplication
+
+  await app.listen(process.env['PORT'] ?? 3000);
   // process 是Node.js 运行时提供的全局对象，表示当前 Node 进程
   // process.env 当前进程的环境变量对象
-  await app.listen(process.env['PORT'] ?? 3000);
+
   console.log(`Application is running on: ${await app.getUrl()}`);
 };
 
@@ -160,7 +162,7 @@ const Injectable = (): ClassDecorator => {
     // const processed = paramTypes.map(t => analyzeType(t));
     // Reflect.defineMetadata('custom:dependencies', processed, target);
 
-    console.log(`[@Injectable] ${(target as { name?: string }).name} 被标记为可注入, 依赖:`, paramTypes);
+    console.log(`[@Injectable] ${(target as { name?: string }).name} 被标记为可注入, 依赖:`, paramTypes); // [@Injectable] UserService 被标记为可注入, 依赖: []
     // target as { name?: string } 是 TypeScript 的类型断言，用来告诉编译器："target 有一个可选的 name 属性"
     // 因为 JavaScript 里，类实际上是个构造函数，函数都有 name 属性
     // name?: string 表示 name 可能不存在，这样即使某些特殊情况下 target.name 是 undefined，也不会类型报错
@@ -175,7 +177,7 @@ class UserService {
 }
 // 验证元数据
 const isInjectable: boolean = Reflect.getMetadata('injectable', UserService) === true;
-console.log('UserService 可注入:', isInjectable); // 输出：UserService 可注入: true
+console.log('UserService 可注入:', isInjectable); // UserService 可注入: true
 
 // 声明一个要传入的参数的interface
 interface ModuleMetadata {
@@ -190,7 +192,7 @@ const Module = (metadata: ModuleMetadata): ClassDecorator => {
   return (target: object) => {
     // 将模块配置（providers、controllers、imports、exports）作为元数据附加到类上，供 DI 容器扫描使用
     Reflect.defineMetadata('module', metadata, target);
-    console.log(`[@Module] ${(target as { name?: string }).name} 模块已注册，provider数量: ${metadata.providers.length}`);
+    console.log(`[@Module] ${(target as { name?: string }).name} 模块已注册，provider数量: ${metadata.providers.length}`); // [@Module] UserModule 模块已注册，provider数量: 1
   };
 };
 @Module({
@@ -202,7 +204,7 @@ const Module = (metadata: ModuleMetadata): ClassDecorator => {
 class UserModule {}
 
 const moduleMetadata = Reflect.getMetadata('module', UserModule) as ModuleMetadata | undefined;
-console.log('UserModule providers 数量:', moduleMetadata?.providers.length); // 输出：UserModule providers 数量: 1
+console.log('UserModule providers 数量:', moduleMetadata?.providers.length); // UserModule providers 数量: 1
 
 // ============================================================
 // 示例 4：nest-cli.json 核心配置解读

@@ -83,7 +83,7 @@ class UsersModule {}
 })
 class AppModule {}
 
-console.log('AppModule 和 UsersModule 已定义');
+console.log('AppModule 和 UsersModule 已定义'); /* AppModule 和 UsersModule 已定义 */
 
 // ============================================================
 // 示例 2：模块的 DI 作用域边界
@@ -99,7 +99,7 @@ console.log('AppModule 和 UsersModule 已定义');
 @Injectable()
 class PrivateService {
   public secret(): string {
-    return '只有本模块能访问'; // 是下面的IsolatedModule的@Module装饰器里exports里没写导致的
+    return '只有本模块能访问'; // 是下面的IsolatedModule的@Module装饰器里exports里没写当前类导致的
   }
 }
 
@@ -124,7 +124,6 @@ class IsolatedModule {}
 class ConsumerService {
   // 可以注入 PublicService（因为 IsolatedModule 导出了它）
   // 不能注入 PrivateService（未导出，DI 容器会报错）
-
   constructor(private publicService: PublicService) {}
 
   public getData(): string {
@@ -300,15 +299,24 @@ import type { OnModuleInit as NestOnModuleInit } from '@nestjs/common';
 
 @Injectable()
 class DynamicService implements NestOnModuleInit {
+  // constructor(private usersService: UsersService) {}
+  // ✅ 日常99%的场景：构造函数注入。NestJS 自动帮你找到 UsersService 的实例，塞进来
+
   constructor(private readonly moduleRef: ModuleRef) {}
+  /* 而ModuleRef 是DI容器给你提供的，一个手动查找、注入的遥控器，你可以随时遥控 */
 
   // 在模块初始化后手动获取 Provider
   public onModuleInit(): void {
-    // 按类 Token 获取（默认严格模式，Provider 必须存在）
     const usersService: UsersService = this.moduleRef.get(UsersService);
-
-    // 按字符串 Token 获取
+    /* 1.按类 Token 获取（默认严格模式，Provider 必须存在） */
+    /* 手动遥控点名："把 UsersService 的实例给我"
+    为什么要有这个"遥控器"？只有少数场景需要它：
+      运行时才知道要哪个：比如根据用户角色的不同，动态选择不同的 Service 实现
+      需要每次新建实例（resolve）：请求级作用域的 Provider，不同请求需要不同实例
+      不想或不能写在构造函数里：某些极端情况
+    */
     const db: unknown = this.moduleRef.get('DATABASE_CONNECTION');
+    /* 2.按字符串 Token 获取 */
 
     console.log('动态获取 UsersService:', usersService.findAll());
     console.log('动态获取数据库连接:', db);
