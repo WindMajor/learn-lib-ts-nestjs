@@ -23,15 +23,7 @@
  *   - 作用域 REQUEST = 每个请求独立的 Pinia Store 实例
  */
 
-import {
-  Injectable,
-  Inject,
-  Optional,
-  Module,
-  Scope,
-  Controller,
-  Get,
-} from '@nestjs/common';
+import { Injectable, Inject, Optional, Module, Scope, Controller, Get } from '@nestjs/common';
 import type { OnModuleInit } from '@nestjs/common';
 
 // ============================================================
@@ -50,7 +42,7 @@ import type { OnModuleInit } from '@nestjs/common';
 @Injectable()
 class DatabaseRepository {
   public query(sql: string): unknown[] {
-    console.log(`执行 SQL: ${sql}`);
+    console.log(`执行 SQL: ${sql}`); // 执行 SQL: SELECT * FROM users
     return [{ id: 1, name: 'test' }];
   }
 }
@@ -82,22 +74,61 @@ class AppService_04 {
 const repo: DatabaseRepository = new DatabaseRepository();
 const service: UserService_04 = new UserService_04(repo);
 const appService: AppService_04 = new AppService_04(service);
-console.log(appService.getUsers());
+console.log(appService.getUsers()); // [{ id: 1, name: 'test' } ]
+
+/* 
+手动注入的特点：
+  你负责创建所有依赖实例
+  你控制依赖的生命周期和顺序
+  你必须知道整个依赖树（repo → service → appService）
+  每次使用都要手动 new，无法复用实例
+  依赖关系变化时，需要手动修改所有创建代码
+手动注入的缺点：
+  如果 UserService_04 需要新增一个 LoggerService 依赖，你需要修改所有创建 UserService_04 的地方
+  无法全局共享实例，每次 new 都是新对象
+  测试时难以替换依赖（需要修改代码）
+
+DI自动注入的特点：
+  容器负责创建和注入依赖
+  容器管理生命周期（默认单例，整个应用共享一个实例）
+  你只需声明需要什么（通过构造函数参数），不需要知道如何创建
+  容器自动解析依赖树，递归创建所有依赖
+  依赖关系变化时，只需修改构造函数签名，容器自动适配
+DI自动注入的优势：
+  新增依赖只需修改构造函数，容器自动处理
+  默认单例模式，性能更好
+  测试时可以轻松 mock 依赖（通过 useClass/useValue 等）
+  支持循环依赖解决、作用域控制等高级特性
+DI自动注入的缺点：
+  学习曲线和复杂度：需要理解装饰器、元数据、反射等概念，新手难以理解"魔法般"的自动注入机制，调试时难以追踪依赖是如何被创建和注入的
+  隐式依赖关系：依赖关系隐藏在装饰器和构造函数中，不如手动注入直观，难以快速了解一个类的所有依赖（需要查看构造函数），大型项目中依赖树可能变得难以理解
+  运行时错误：编译能通过，但运行时可能报错，依赖缺失只能在运行时发现，错误信息有时不够清晰
+  性能开销：容器启动时需要解析和构建依赖树，反射和元数据读取有轻微性能损耗（通常可忽略），循环依赖检测增加复杂度
+  过度依赖框架：代码与框架强耦合，难以迁移到其他框架，测试时必须模拟整个 DI 容器或使用框架的测试工具，无法脱离框架单独运行某些类
+实际权衡：
+  在 NestJS 这样的企业级框架 中，这些缺点远小于收益：
+    ✅ 代码更简洁、可维护性更高
+    ✅ 单例管理、作用域控制等开箱即用
+    ✅ 便于测试（可以轻松 mock 依赖）
+  但在小型脚本或简单项目 中，手动注入可能更合适，避免引入不必要的复杂度。
+*/
 
 // ============================================================
-// 示例 2：属性注入（@Inject() 装饰器）
+// 示例 2：属性注入（@Inject() 装饰器）+ 接口 vs 类注入对比
 // ============================================================
 
 /**
  * 【场景】需要注入时无法通过构造函数声明（如多继承场景、可选依赖）
  * 【语法点】@Inject(Token) 声明属性注入，@Optional() 标记可选依赖
- * 【NestJS 设计意图】提供除构造函数外的补充注入方式
- * 【注意】构造函数注入是首选，属性注入仅在特殊场景使用
+ * 【核心问题】为什么需要字符串 Token？接口 vs 类注入有什么区别？
  */
+
+// 定义 Logger 接口
 interface Logger {
   log(message: string): void;
 }
 
+// 实现 Logger 接口的具体类
 @Injectable()
 class ConsoleLogger implements Logger {
   public log(message: string): void {
@@ -105,29 +136,176 @@ class ConsoleLogger implements Logger {
   }
 }
 
+// 定义字符串 Token 常量（避免魔法字符串拼写错误）
+const LOGGER_TOKEN = 'LOGGER_TOKEN';
+
+// ============================================================
+// 示例 2.1：❌ 错误示例 —— 接口无法直接注入
+// ============================================================
+@Injectable()
+class WrongInjectionService {
+  // ❌ 错误：接口在运行时被擦除，DI 容器找不到 Logger
+  // 编译通过，但运行时 logger 会是 undefined
+  constructor(private readonly logger: Logger) {}
+  //                                   ^^^^^^ 运行时不存在
+  public doLog(): void {
+    this.logger.log('This will crash!'); // TypeError: Cannot read property 'log' of undefined
+  }
+}
+
+// ============================================================
+// 示例 2.2：✅ 正确方式 1 —— 直接注入具体类（推荐）
+// ============================================================
+@Injectable()
+class DirectClassInjection {
+  // ✅ 直接注入 ConsoleLogger 类，无需 @Inject
+  constructor(private readonly logger: ConsoleLogger) {}
+  //                                   ^^^^^^^^^^^^^ class 在运行时存在，可作为 Token
+  public doLog(): void {
+    this.logger.log('Direct class injection works!');
+  }
+}
+
+// ============================================================
+// 示例 2.3：✅ 正确方式 2 —— 接口 + 字符串 Token（面向接口编程）
+// ============================================================
+@Injectable()
+class StringTokenInjection {
+  // ✅ 使用字符串 Token，需要配合 @Inject
+  constructor(@Inject(LOGGER_TOKEN) private readonly logger: Logger) {}
+  //          ^^^^^^^^^^^^^^^^^^^^ 使用常量，避免拼写错误
+  //                                                           ^^^^^^ 接口仅用于类型约束
+  public doLog(): void {
+    this.logger.log('String token injection works!');
+  }
+}
+
+// ============================================================
+// 示例 2.4：属性注入示例（可选依赖）
+// ============================================================
 @Injectable()
 class PropertyInjectionService {
-  // 属性注入：直接在属性上使用 @Inject()
-  @Inject('CONFIG_TOKEN')
-  private readonly config!: { appName: string; version: string };
+  // 属性注入方式 1：直接注入类（推荐）
+  @Optional() // 如果找不到也不报错
+  private readonly directLogger?: ConsoleLogger;
 
-  // 可选注入：如果 Provider 不存在也不会报错
+  // 属性注入方式 2：接口 + 字符串 Token
   @Optional()
-  @Inject('OPTIONAL_LOGGER')
-  private readonly logger?: Logger;
-
-  public printConfig(): void {
-    console.log(`App: ${this.config.appName} v${this.config.version}`);
-  }
+  @Inject(LOGGER_TOKEN) // 使用常量
+  private readonly tokenLogger?: Logger;
 
   public safeLog(message: string): void {
-    if (this.logger) {
-      this.logger.log(message);
+    // 优先使用 directLogger
+    if (this.directLogger) {
+      this.directLogger.log(message);
+    } else if (this.tokenLogger) {
+      this.tokenLogger.log(message);
     } else {
-      console.log(`[FALLBACK] ${message}`);
+      console.log(`[FALLBACK] ${message}`); // 两个都不存在时的降级处理
     }
   }
 }
+
+// ============================================================
+// 示例 2.5：模块配置 —— 注册字符串 Token
+// ============================================================
+/**
+ * 【关键】字符串 Token 必须在模块中注册，告诉 DI 容器这个 Token 对应哪个实现
+ */
+@Module({
+  providers: [
+    // 注册具体实现类
+    ConsoleLogger,
+
+    // 注册字符串 Token（面向接口编程的关键）
+    {
+      provide: LOGGER_TOKEN, // Token：DI 容器的钥匙
+      useClass: ConsoleLogger, // 实现：告诉容器用 ConsoleLogger 类，不能使用Logger，不能使用接口
+      /* 因为useClass 需要一个可以被实例化的构造函数 */
+    },
+
+    // 注册使用者
+    DirectClassInjection,
+    StringTokenInjection,
+    PropertyInjectionService,
+  ],
+})
+class Example2Module {}
+/* 如果只有一个实现，直接注入类确实更简单（推荐）
+字符串 Token + 接口的价值在于多态切换：
+// 多个实现
+class ConsoleLogger implements Logger { ... }
+class FileLogger implements Logger { ... }
+class RemoteLogger implements Logger { ... }
+// 开发环境用 ConsoleLogger
+@Module({
+  providers: [{
+    provide: LOGGER_TOKEN,
+    useClass: process.env.NODE_ENV === 'production' 
+      ? RemoteLogger    // 生产环境：远程日志
+      : ConsoleLogger,  // 开发环境：控制台日志
+  }],
+})
+// 业务代码不需要修改
+@Injectable()
+class MyService {
+  constructor(@Inject(LOGGER_TOKEN) private logger: Logger) {}
+  // ✅ 通过修改模块配置切换实现，业务代码零改动
+}
+
+其他典型应用：
+// 支付服务：生产用真实支付，测试用 Mock
+@Module({
+  providers: [{
+    provide: 'PAYMENT',
+    useClass: isTest ? MockPayment : StripePayment,  // 一行配置切换
+  }],
+})
+*/
+
+/**
+ * 【使用常量的好处】
+ * ❌ 魔法字符串：
+ *   provide: 'LOGGER_TOKEN'
+ *   @Inject('LOGGER_TOKNE')  // 拼错了！运行时才报错
+ *
+ * ✅ 使用常量：
+ *   const LOGGER_TOKEN = 'LOGGER_TOKEN';
+ *   provide: LOGGER_TOKEN
+ *   @Inject(LOGGER_TOKEN)  // IDE 自动补全，类型安全
+ */
+
+/**
+ * ============================================================
+ * 📋 核心知识点总结
+ * ============================================================
+ *
+ * 【为什么接口不能直接注入？】
+ * TypeScript 接口在编译后会被完全擦除：
+ *   interface Logger { log(msg: string): void; }
+ *   // 编译成 JavaScript 后 → 空（什么都没有）
+ *
+ * 【为什么 class 可以直接注入？】
+ * class 在 TypeScript 中有双重身份：
+ *   1. 作为类型（编译时）：const logger: ConsoleLogger
+ *   2. 作为值（运行时）：providers: [ConsoleLogger]
+ *
+ * 【两种注入方式对比】
+ * ┌─────────────────┬──────────────────┬─────────────────────┐
+ * │                 │  直接注入类      │  接口 + 字符串 Token │
+ * ├─────────────────┼──────────────────┼─────────────────────┤
+ * │ 类型安全        │  ✅ 编译时检查    │  ⚠️ Token 易拼错     │
+ * │ 面向接口编程    │  ❌ 耦合具体实现  │  ✅ 解耦，易测试      │
+ * │ 写法复杂度      │  简单，无需 @Inject│  需要 @Inject       │
+ * │ 适用场景        │  单一实现         │  多实现切换          │
+ * └─────────────────┴──────────────────┴─────────────────────┘
+ *
+ * 【最佳实践】
+ * - 简单场景：直接注入类 `constructor(private logger: ConsoleLogger)`
+ * - 需要多态：使用字符串 Token + 定义常量避免拼写错误
+ *   const LOGGER_TOKEN = 'LOGGER_TOKEN';
+ *   @Inject(LOGGER_TOKEN)
+ */
 
 // ============================================================
 // 示例 3：自定义 Provider —— useClass（标准类替换）
@@ -161,10 +339,7 @@ class MockPaymentService implements PaymentService {
   providers: [
     {
       provide: 'PAYMENT_SERVICE', // 接口 Token（用字符串避免类型擦除问题）
-      useClass:
-        process.env['NODE_ENV'] === 'production'
-          ? RealPaymentService
-          : MockPaymentService, // 开发环境用 Mock
+      useClass: process.env['NODE_ENV'] === 'production' ? RealPaymentService : MockPaymentService, // 开发环境用 Mock
     },
   ],
 })
@@ -205,11 +380,24 @@ const appConfig: AppConfig = {
       useValue: 3,
     },
     // 注入第三方库实例（如 Redis 客户端）
+    // 【问题】第三方库的实例不是用 @Injectable() 装饰的类，无法直接注入
+    // 【解决】先创建实例，再用 useValue 注入到容器
+    // 【实际项目】
+    //   import Redis from 'ioredis';
+    //   const redisClient = new Redis({ host: 'localhost', port: 6379 });
+    //   providers: [{ provide: 'REDIS_CLIENT', useValue: redisClient }]
     {
       provide: 'REDIS_CLIENT',
       useValue: {
-        get: (key: string): string => `mock-value-for-${key}`,
+        // 这里用普通对象模拟 Redis 客户端的 API（实际项目中是真实的 Redis 实例）
+        get: (key: string): string => {
+          // 模拟 Redis GET 命令：返回存储的值
+          // 实际: await redis.get('user:1') 返回 'Alice'
+          return `value-of-${key}`; // 这里返回模拟值
+        },
         set: (key: string, value: string): void => {
+          // 模拟 Redis SET 命令：存储键值对
+          // 实际: await redis.set('user:1', 'Alice')
           console.log(`Redis SET ${key}=${value}`);
         },
       },
@@ -223,10 +411,18 @@ class ConfigConsumer {
   constructor(
     @Inject('APP_CONFIG') private readonly config: AppConfig,
     @Inject('MAX_RETRY_COUNT') private readonly maxRetry: number,
+    @Inject('REDIS_CLIENT') private readonly redis: any, // 注入 Redis 客户端
   ) {}
 
   public showConfig(): void {
     console.log(`端口: ${this.config.port}, 最大重试: ${this.maxRetry}`);
+  }
+
+  public async cacheData(): Promise<void> {
+    // 使用注入的 Redis 客户端
+    this.redis.set('app:config', JSON.stringify(this.config));
+    const cached = this.redis.get('app:config');
+    console.log(`从 Redis 获取: ${cached}`);
   }
 }
 
@@ -252,7 +448,10 @@ class ConfigConsumer {
       useFactory: async (host: string, port: number, config: AppConfig) => {
         // 模拟异步连接数据库
         console.log(`正在连接 ${host}:${port}...`);
-        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+
+        await new Promise<void>((resolve) => setTimeout(resolve, 100)); // // 暂停 100 毫秒
+        /* 常用的 sleep/延迟函数，用于模拟异步操作的耗时 */
+
         return {
           host,
           port,
@@ -261,7 +460,11 @@ class ConfigConsumer {
           databaseUrl: config.databaseUrl,
         };
       },
-      inject: ['DB_HOST', 'DB_PORT', 'APP_CONFIG'], // 管道式注入依赖
+      inject: ['DB_HOST', 'DB_PORT', 'APP_CONFIG'], // 必须手动指定，工厂函数需要显式声明
+      /* inject 数组的作用是告诉 DI 容器：这个工厂函数需要哪些依赖。
+        工厂函数需要 3 个参数，对应上面工程方法里的，host, port, config，顺序很重要，必须对应
+        inject 是依赖声明清单，告诉 DI 容器"按这个顺序，把这些依赖注入到工厂函数的参数中"。
+      */
     },
 
     // 条件工厂：根据环境变量创建不同实现
@@ -273,7 +476,7 @@ class ConfigConsumer {
         }
         return { type: 'memory', store: new Map() };
       },
-      // 无 inject，不需要依赖
+      // 上面的工厂函数参数列表为空，就不需要写inject数组了
     },
   ],
 })
@@ -301,7 +504,8 @@ class OriginalLogger {
     // 为 OriginalLogger 创建别名
     {
       provide: 'LOGGER',
-      useExisting: OriginalLogger, // 指向同一个实例（单例）
+      useExisting: OriginalLogger, // 指向同一个实例（单例），不创建新的示例
+      /* 如果这里使用 useClass，会创建第2个实例 */
     },
   ],
 })
@@ -331,27 +535,73 @@ class SingletonService {
 @Injectable({ scope: Scope.REQUEST })
 class RequestScopedService {
   private readonly requestId: string = crypto.randomUUID();
+  /* 每个 HTTP 请求创建一个新实例，同一请求内共享 */
+
   public getRequestId(): string {
     return this.requestId;
   }
 }
 
 // 场景 3：瞬时作用域 —— 每次注入都创建新实例
-// 典型用途：无状态工具类、临时对象
+// 典型用途：无状态工具类、临时对象、一次性使用的对象
 @Injectable({ scope: Scope.TRANSIENT })
 class TransientService {
-  private readonly counter: number = 1;
-  public increment(): number {
-    return this.counter + 1;
+  private readonly id: string = crypto.randomUUID(); // 每个实例都有唯一 ID
+  /* 每次注入都创建新实例，即使在同一HTTP请求内 */
+
+  public getId(): string {
+    return this.id;
+  }
+
+  // 无状态方法：纯函数，不依赖实例状态
+  public formatDate(date: Date): string {
+    return date.toISOString();
   }
 }
+/* 假设一个请求中注入两次：
+REQUEST作用域：同一请求内是同一个实例
+  @Controller()
+  class MyController {
+    constructor(
+      private service1: RequestScopedService,
+      private service2: RequestScopedService,
+    ) {
+      console.log(service1.getRequestId() === service2.getRequestId());  // true ✅
+      // 同一请求内，两个注入点得到同一个实例
+    }
+  }
+TRANSIENT作用域：每次注入都是新实例
+  @Controller()
+  class MyController {
+    constructor(
+      private service1: TransientService,
+      private service2: TransientService,
+    ) {
+      console.log(service1.getId() === service2.getId());  // false ❌
+      // 即使在同一个构造函数里，也是两个不同的实例
+    }
+  }
+*/
 
-// 注意：如果一个单例 Service 注入了 REQUEST 作用域的 Provider，
-// 单例 Service 本身也需要声明为 REQUEST 作用域（作用域会向上传播）
+/* 
+NestJS 作用域的向上传播规则：如果单例依赖了 REQUEST 作用域的服务，单例也会被"污染"成 REQUEST 作用域。（作用域会向上传播）
+注意：如果一个单例 Service 注入了 REQUEST 作用域的 Provider，单例 Service 本身也需要声明为 REQUEST 作用域
+*/
 @Injectable({ scope: Scope.REQUEST }) // 必须匹配子依赖的作用域
 class UsesRequestScopeService {
   constructor(private readonly requestService: RequestScopedService) {}
 }
+/* 
+作用域传播规则（生命周期从长到短）：
+DEFAULT（单例，最长）→ REQUEST（请求级，中等）→ TRANSIENT（瞬时，最短）
+
+传播方向：短生命周期会"感染"长生命周期
+- DEFAULT 依赖 REQUEST → 必须改为 REQUEST ✅
+- DEFAULT 依赖 TRANSIENT → 必须改为 TRANSIENT ✅
+- REQUEST 依赖 TRANSIENT → 必须改为 TRANSIENT ✅
+
+核心原则：消费者的作用域必须 <= 依赖的作用域（生命周期必须更短或相等），否则会产生语义冲突
+*/
 
 // ============================================================
 // ❌ 常见错误 1：循环依赖（A 注入 B，B 注入 A）
