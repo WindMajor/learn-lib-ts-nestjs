@@ -305,7 +305,12 @@ class DynamicService implements NestOnModuleInit {
   constructor(private readonly moduleRef: ModuleRef) {}
   /* 而ModuleRef 是DI容器给你提供的，一个手动查找、注入的遥控器，你可以随时遥控 */
 
-  // 在模块初始化后手动获取 Provider
+  /* 1️⃣ 生命周期钩子：在模块初始化时自动调用（生命周期回调），同步获取已实例化的 Provider，【moduleRef.get()】
+    适用于SINGLETON（默认）和 TRANSIENT作用域。REQUEST作用域的 Provider 需要使用 moduleRef.resolve() 异步获取
+      1 SINGLETON（默认）：get() 返回全局唯一的单例实例 ✅
+      2 TRANSIENT：get() 每次返回新实例 ✅
+      3 REQUEST：get() 无法获取，必须用 resolve() 并传入 contextId ❌ 
+  */
   public onModuleInit(): void {
     const usersService: UsersService = this.moduleRef.get(UsersService);
     /* 1.按类 Token 获取（默认严格模式，Provider 必须存在） */
@@ -315,6 +320,7 @@ class DynamicService implements NestOnModuleInit {
       需要每次新建实例（resolve）：请求级作用域的 Provider，不同请求需要不同实例
       不想或不能写在构造函数里：某些极端情况
     */
+
     const db: unknown = this.moduleRef.get('DATABASE_CONNECTION');
     /* 2.按字符串 Token 获取 */
 
@@ -322,12 +328,16 @@ class DynamicService implements NestOnModuleInit {
     console.log('动态获取数据库连接:', db);
   }
 
-  // 按作用域获取（用于 REQUEST 作用域的 Provider）
-  public async getScopedProvider(contextId: unknown): Promise<UsersService | null> {
+  // 2️⃣ 业务方法：手动调用的方法（不是生命周期钩子），运行时获取请求级作用域 Provider，（每个请求需要独立实例），异步获取，【moduleRef.resolve()】
+  // 需要传入 contextId（请求上下文 ID）
+  public async getScopedProvider(contextId: unknown): Promise<UsersService> {
     const result = await this.moduleRef.resolve<UsersService>(UsersService, contextId as { id: number }, {
       strict: false, // 非严格模式，Provider 不存在返回 undefined 而不会抛错
     });
     return result;
+    /* 这里的result是 UsersService 类型
+    return之后的返回值需要被Promise包裹，是因为当前方法本身是 async 修饰的
+    */
   }
 }
 
@@ -342,65 +352,59 @@ class DynamicService implements NestOnModuleInit {
  * 【DI 容器行为】forwardRef 返回一个 ForwardReference 对象，
  *               DI 容器在模块实例化完成后才解析它，打破循环
  */
-// forwardRef 仅用于下方注释示例，实际使用时需从 @nestjs/common 导入
-// import { forwardRef } from '@nestjs/common';
 
-// ---- 模拟 ----
-// @Module({})
-// class AuthModuleMock {}
-// @Module({})
-// class UsersModuleMock {}
+// 实际使用时需要从 @nestjs/common 导入：
+// import { forwardRef, Inject } from '@nestjs/common';
+// 这是forwardRef的具体函数声明：export declare const forwardRef: (fn: () => any) => ForwardReference;
+
+// 场景：UsersModule 需要 AuthModule 的功能，AuthModule 也需要 UsersModule 的功能
+
+// ---- 方案一：模块级循环依赖 ----
+// 在 @Module 的 imports 中使用 forwardRef()
+
+// @Module({
+//     老方法：imports: [AuthModule],  // ❌ 但 AuthModule 还没定义！
+//   imports: [forwardRef(() => AuthModule)],  // 延迟引用，避免循环依赖错误，这里的 () => AuthModule 对应的方法参数列表的 fn: () => any
+//   providers: [UsersService],
+//   exports: [UsersService],
+// })
+// class UsersModule {}
+//
+// @Module({
+//   imports: [forwardRef(() => UsersModule)],  // 双方都需要用 forwardRef
+//   providers: [AuthService],
+//   exports: [AuthService],
+// })
+// class AuthModule {}
+
+// ---- 方案二：Provider 级循环依赖 ----
+// 在构造函数注入时使用 @Inject(forwardRef(() => Type))
+
 // @Injectable()
-// class AuthServiceMock {}
-// @Injectable()
-// class UsersServiceMock {}
-// ----
-
-// 场景：UsersModule 需要 AuthModule 的 Guard，AuthModule 需要 UsersModule 的 Service
-
-// 方案一：模块级循环依赖使用 forwardRef()
-// 注：先声明 AuthModule（或被引用的模块应先声明或使用 forwardRef 延迟引用）
-
-// 方案二：Provider 级循环依赖使用 @Inject(forwardRef(() => Type))
-// 注：下方示例中 AuthService 和 UsersService_ 相互引用，
-// 需使用 forwardRef 打破循环，但为简洁此处仅展示模式
-
-// @Injectable()
-// class AuthService_02 {
+// class AuthService {
 //   constructor(
-//     @Inject(forwardRef(() => UsersService_))
-//     private readonly usersService: UsersService_,
+//     @Inject(forwardRef(() => UsersService))  // 延迟注入
+//     private readonly usersService: UsersService,
 //   ) {}
+//
+//   public checkUser(): string {
+//     return this.usersService.findAll()[0];
+//   }
+// }
+//
+// @Injectable()
+// class UsersService {
+//   constructor(
+//     @Inject(forwardRef(() => AuthService))  // 双方都需要用 forwardRef
+//     private readonly authService: AuthService,
+//   ) {}
+//
+//   public findAll(): string[] {
+//     return ['user1', 'user2'];
+//   }
 // }
 
-@Injectable()
-class UsersService_ {
-  // 实际中如果与 AuthService 循环依赖：
-  // constructor(
-  //   @Inject(forwardRef(() => AuthService_02))
-  //   private readonly authService: unknown,
-  // ) {}
-  public findAll(): string[] {
-    return ['user1'];
-  }
-}
-
-const showForwardRefExample = (): void => {
-  // 展示 forwardRef 用法（避免类声明顺序问题）
-  const _forwardRefUsage = (): void => {
-    // @Module({
-    //   imports: [forwardRef(() => AuthModule)],  // 延迟引用
-    // })
-    // class UsersModule {}
-    //
-    // @Module({
-    //   imports: [forwardRef(() => UsersModule)],  // 双方都用 forwardRef
-    // })
-    // class AuthModule {}
-    console.log('forwardRef 模式示例已展示');
-  };
-  _forwardRefUsage();
-};
+// 注：以上代码仅作演示，实际项目中应该尽量通过重构避免循环依赖
 
 // ============================================================
 // ❌ 常见错误 1：模块未导入却使用其 Provider
@@ -466,8 +470,6 @@ void UserRepository;
 void RootModule;
 void FeatureModule;
 void DynamicService;
-void UsersService_;
-showForwardRefExample();
 
 console.log('=== 第 02 章示例代码结束 ===');
 
