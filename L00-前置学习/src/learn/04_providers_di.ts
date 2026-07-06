@@ -144,8 +144,7 @@ const LOGGER_TOKEN = 'LOGGER_TOKEN';
 // ============================================================
 @Injectable()
 class WrongInjectionService {
-  // ❌ 错误：接口在运行时被擦除，DI 容器找不到 Logger
-  // 编译通过，但运行时 logger 会是 undefined
+  // ❌ 错误：接口在运行时被擦除，接口在运行时被擦除，不能作为 DI Token，启动时 NestJS 会报 Nest can't resolve dependencies。
   constructor(private readonly logger: Logger) {}
   //                                   ^^^^^^ 运行时不存在
   public doLog(): void {
@@ -187,6 +186,7 @@ class StringTokenInjection {
 class PropertyInjectionService {
   // 属性注入方式 1：直接注入类（推荐）
   @Optional() // 如果找不到也不报错
+  @Inject(ConsoleLogger)
   private readonly directLogger?: ConsoleLogger;
 
   // 属性注入方式 2：接口 + 字符串 Token
@@ -220,7 +220,7 @@ class PropertyInjectionService {
     // 注册字符串 Token（面向接口编程的关键）
     {
       provide: LOGGER_TOKEN, // Token：DI 容器的钥匙
-      useClass: ConsoleLogger, // 实现：告诉容器用 ConsoleLogger 类，不能使用Logger，不能使用接口
+      useClass: ConsoleLogger, // 实现：告诉容器用 ConsoleLogger 类，不能使用接口Logger
       /* 因为useClass 需要一个可以被实例化的构造函数 */
     },
 
@@ -504,7 +504,7 @@ class OriginalLogger {
     // 为 OriginalLogger 创建别名
     {
       provide: 'LOGGER',
-      useExisting: OriginalLogger, // 指向同一个实例（单例），不创建新的示例
+      useExisting: OriginalLogger, // 指向同一个实例（单例），不创建新的实例
       /* 如果这里使用 useClass，会创建第2个实例 */
     },
   ],
@@ -530,11 +530,13 @@ class SingletonService {
   }
 }
 
+import { randomUUID } from 'crypto';
+
 // 场景 2：请求作用域 —— 每个 HTTP 请求创建一个新实例
 // 典型用途：存储请求上下文（如当前用户信息）
 @Injectable({ scope: Scope.REQUEST })
 class RequestScopedService {
-  private readonly requestId: string = crypto.randomUUID();
+  private readonly requestId: string = randomUUID();
   /* 每个 HTTP 请求创建一个新实例，同一请求内共享 */
 
   public getRequestId(): string {
@@ -546,7 +548,7 @@ class RequestScopedService {
 // 典型用途：无状态工具类、临时对象、一次性使用的对象
 @Injectable({ scope: Scope.TRANSIENT })
 class TransientService {
-  private readonly id: string = crypto.randomUUID(); // 每个实例都有唯一 ID
+  private readonly id: string = randomUUID(); // 每个实例都有唯一 ID
   /* 每次注入都创建新实例，即使在同一HTTP请求内 */
 
   public getId(): string {
@@ -583,10 +585,11 @@ TRANSIENT作用域：每次注入都是新实例
   }
 */
 
-/* 
-NestJS 作用域的向上传播规则：如果单例依赖了 REQUEST 作用域的服务，单例也会被"污染"成 REQUEST 作用域。（作用域会向上传播）
-注意：如果一个单例 Service 注入了 REQUEST 作用域的 Provider，单例 Service 本身也需要声明为 REQUEST 作用域
-*/
+/*
+ * NestJS 的依赖树静态性分析：若单例依赖了 REQUEST/TRANSIENT 作用域的 Provider，
+ * 该单例在请求上下文中会被重新实例化（注入代理）。因此单例不会"自动变成 REQUEST scope"，
+ * 但已不再是纯单例。推荐显式声明作用域，避免在生命周期钩子中访问时拿到 undefined。
+ */
 @Injectable({ scope: Scope.REQUEST }) // 必须匹配子依赖的作用域
 class UsesRequestScopeService {
   constructor(private readonly requestService: RequestScopedService) {}
