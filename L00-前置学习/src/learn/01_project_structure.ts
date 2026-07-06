@@ -73,7 +73,7 @@ const bootstrap2 = async (): Promise<void> => {
     new ValidationPipe({
       whitelist: true, // 自动剥离 DTO 中未定义的属性
       forbidNonWhitelisted: true, // 存在未定义属性时抛出 400
-      transform: true, // 自动类型转换（如 string → number）
+      transform: true, // 自动类型转换（包括 string → number/boolean 等，根据 DTO 类型定义）
     }),
   );
 
