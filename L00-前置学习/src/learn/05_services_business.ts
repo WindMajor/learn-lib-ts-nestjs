@@ -22,11 +22,7 @@
  *   - Service 的纯函数特性 = Vue3 Composables 的可测试性设计
  */
 
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 
 // ============================================================
 // 示例 1：Service 类的设计原则 —— 纯业务逻辑
@@ -52,30 +48,38 @@ interface User {
 }
 
 // 模拟 Drizzle DB（实际项目中由 DrizzleService 提供）
-interface PrismaTransaction {
+interface DrizzleTransaction {
   user: {
     findUnique: (args: { where: { id: number } }) => Promise<User | null>;
     findMany: (args: object) => Promise<User[]>;
+
     create: (args: { data: Partial<User> }) => Promise<User>;
-    update: (args: {
-      where: { id: number };
-      data: Partial<User>;
-    }) => Promise<User>;
+    /* Partial<T> 是 TypeScript 的内置工具类型（Utility Type），作用是将类型 T 的所有属性变为可选的。 */
+
+    update: (args: { where: { id: number }; data: Partial<User> }) => Promise<User>;
     delete: (args: { where: { id: number } }) => Promise<User>;
   };
 }
+/* 
+TS里的工具类型：
+Partial<T>    // 所有属性变成可选的
+Required<T>   // 所有属性变为必填（与 Partial 相反）
+Pick<T, K>    // 只保留指定属性
+Omit<T, K>    // 排除指定属性
+Readonly<T>   // 所有属性变为只读
+ */
 
 @Injectable()
 class UsersService_05 {
   // ✅ 注入 DrizzleService（或其他 Repository），而非创建 HTTP 相关依赖
   constructor(
-    private readonly prisma: PrismaTransaction,
+    private readonly db: DrizzleTransaction,
     private readonly emailService: EmailService_05, // 注入其他 Service
   ) {}
 
   // ✅ 纯业务方法：接收参数，返回数据，不操作 req/res
   public async findById(id: number): Promise<User> {
-    const user: User | null = await this.prisma.user.findUnique({
+    const user: User | null = await this.db.user.findUnique({
       where: { id },
     });
     if (!user) {
@@ -88,7 +92,7 @@ class UsersService_05 {
   // ✅ 业务逻辑复用：多个 Controller 方法可以调用同一个 Service 方法
   public async findActiveUsers(page: number, limit: number): Promise<User[]> {
     const skip: number = (page - 1) * limit;
-    return this.prisma.user.findMany({
+    return this.db.user.findMany({
       where: { isActive: true },
       skip,
       take: limit,
@@ -96,13 +100,9 @@ class UsersService_05 {
   }
 
   // ✅ 跨服务调用：通过 DI 注入 EmailService，而非 new EmailService()
-  public async register(
-    email: string,
-    name: string,
-    password: string,
-  ): Promise<User> {
+  public async register(email: string, name: string, password: string): Promise<User> {
     // 1. 业务验证
-    const existing: User | null = await this.prisma.user.findUnique({
+    const existing: User | null = await this.db.user.findUnique({
       where: { id: 0 }, // 简化：实际按 email 查找
     });
     if (existing) {
@@ -110,7 +110,7 @@ class UsersService_05 {
     }
 
     // 2. 创建用户
-    const user: User = await this.prisma.user.create({
+    const user: User = await this.db.user.create({
       data: { email, name, password },
     });
 
@@ -156,6 +156,15 @@ class AnemicUserService {
     return user.role === 'ADMIN';
   }
 }
+/* 
+贫血模型：需要通过 Service 调用
+const fullName = await anemicService.getUserFullName(user);
+const isAdminUser = await anemicService.isAdmin(user);
+
+对比充血模型：直接调用模型方法
+const fullName = richUser.getFullName();
+const isAdminUser = richUser.isAdmin();
+*/
 
 // 充血模型示例（Domain-Driven Design 风格）
 class RichUserModel {
@@ -168,6 +177,16 @@ class RichUserModel {
   ) {}
 
   // 行为方法在模型内部
+  public getFullName(): string {
+    // 与贫血模型对比：逻辑封装在模型内部，而非 Service 中
+    return `${this.name ?? '匿名'} <${this.email}>`;
+  }
+
+  public isAdmin(): boolean {
+    // 与贫血模型对比：判断逻辑内聚在模型内部
+    return this.role === 'ADMIN';
+  }
+
   public getDisplayName(): string {
     return this.name ?? '匿名用户';
   }
@@ -181,27 +200,18 @@ class RichUserModel {
   }
 
   // 将数据库 User 转换为充血模型
-  public static fromPrisma(prismaUser: User): RichUserModel {
-    return new RichUserModel(
-      prismaUser.id,
-      prismaUser.email,
-      prismaUser.name,
-      prismaUser.role,
-      prismaUser.isActive,
-    );
+  public static fromDrizzle(drizzleUser: User): RichUserModel {
+    return new RichUserModel(drizzleUser.id, drizzleUser.email, drizzleUser.name, drizzleUser.role, drizzleUser.isActive);
   }
 }
 
 // 使用充血模型
 @Injectable()
 class RichUserService {
-  public async getUser(
-    id: number,
-    prisma: PrismaTransaction,
-  ): Promise<RichUserModel> {
-    const user: User | null = await prisma.user.findUnique({ where: { id } });
+  public async getUser(id: number, db: DrizzleTransaction): Promise<RichUserModel> {
+    const user: User | null = await db.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException(`用户 ${id} 不存在`);
-    return RichUserModel.fromPrisma(user);
+    return RichUserModel.fromDrizzle(user);
   }
 }
 
@@ -220,8 +230,8 @@ class RichUserService {
 // @Injectable()
 // class BadPostService {
 //   createPost() {
-//     const userService = new UsersService_05(???); // 无法传递 prisma
-//     // userService.findById(1);  // prisma 为 undefined → 崩溃
+//     const userService = new UsersService_05(???); // 无法传递 db
+//     // userService.findById(1);  // db 为 undefined → 崩溃
 //   }
 // }
 
@@ -229,16 +239,12 @@ class RichUserService {
 @Injectable()
 class PostService_05 {
   constructor(
-    private readonly prisma: PrismaTransaction,
+    private readonly db: DrizzleTransaction,
     private readonly userService: UsersService_05, // DI 容器自动注入
     private readonly notificationService: NotificationService_05,
   ) {}
 
-  public async createPost(
-    title: string,
-    content: string,
-    authorId: number,
-  ): Promise<object> {
+  public async createPost(title: string, content: string, authorId: number): Promise<object> {
     // 1. 验证作者存在（跨 Service 调用）
     const author: User = await this.userService.findById(authorId);
 
@@ -246,10 +252,7 @@ class PostService_05 {
     const post: object = { title, content, authorId };
 
     // 3. 发送通知（又一个跨 Service 调用）
-    await this.notificationService.notifyFollowers(
-      authorId,
-      `发布了新文章《${title}》`,
-    );
+    await this.notificationService.notifyFollowers(authorId, `发布了新文章《${title}》`);
 
     return post;
   }
@@ -273,25 +276,23 @@ class NotificationService_05 {
  */
 
 // 模拟支持事务的完整类型
-interface PrismaClientWithTransaction {
-  $transaction: <T>(
-    operations: (tx: PrismaTransaction) => Promise<T>,
-  ) => Promise<T>;
-  user: PrismaTransaction['user'];
+interface DrizzleClientWithTransaction {
+  $transaction: <T>(operations: (tx: DrizzleTransaction) => Promise<T>) => Promise<T>;
+  /* $ 是 Drizzle ORM 的命名约定，用于标识特殊的、框架级别的字段或方法。 用 $ 前缀可以，避免与表名冲突，视觉上立即识别这是框架方法而非业务模型 */
+  /* $transaction 是 Drizzle ORM 框架定义的固定方法名，不能自定义 */
+
+  user: DrizzleTransaction['user'];
+  /* 无$前缀，表示这是数据模型。有$前缀表示这是框架级方法 */
 }
 
 @Injectable()
 class OrderService {
-  constructor(private readonly prisma: PrismaClientWithTransaction) {}
+  constructor(private readonly db: DrizzleClientWithTransaction) {}
 
   // 交互式事务：通过回调函数获得事务 Client
-  public async createOrder(
-    userId: number,
-    productId: number,
-    quantity: number,
-  ): Promise<object> {
-    return this.prisma.$transaction(async (tx: PrismaTransaction) => {
-      // 在事务中，所有操作使用 tx 而非 this.prisma
+  public async createOrder(userId: number, productId: number, quantity: number): Promise<object> {
+    return this.db.$transaction(async (tx: DrizzleTransaction) => {
+      // 在事务中，所有操作使用 tx 而非 this.db
       const user: User | null = await tx.user.findUnique({
         where: { id: userId },
       });
@@ -329,6 +330,34 @@ class OrderService {
  * 【NestJS 设计意图】每一层有自己的数据类型，防止数据库结构泄露到 API 响应
  *                    也防止前端传过来的数据直接入库
  */
+/* 
+DTO - Data Transfer Object（数据传输对象）
+  用途：在不同层之间传输数据，前端提交给后端
+  位置：前端 → 后端，或服务间通信
+  特点：通常带验证规则（如 class-validator 装饰器）
+
+Entity - 实体
+  用途：代表数据库中的一条记录
+  位置：ORM 层，与数据库表一一对应
+  特点：包含数据库字段和关系定义
+
+DO - Domain Object（领域对象）
+  用途：业务逻辑层的数据对象，可能是 Entity 的包装或聚合
+  位置：Service 层，承载业务逻辑
+  特点：
+    可以等同于 Entity（贫血模型）
+    可以是包含行为方法的充血模型（如 RichUserModel）
+    可以聚合多个 Entity 的数据
+
+VO - Value Object（值对象）或 View Object（视图对象）
+  用途：返回给前端的展示数据
+  位置：后端 → 前端
+  特点：
+    过滤敏感字段（如 password）
+    格式化数据（如日期转字符串）
+    添加计算字段（如 postCount）
+*/
+
 interface CreateUserDto {
   email: string;
   name: string;
@@ -372,6 +401,7 @@ class UserMappingService {
    *   1. 不会泄露 password 字段
    *   2. 日期格式化为前端可直接展示的字符串
    *   3. 可以添加计算字段
+   * postCount 是一个聚合数据字段，用于在 VO 中附加用户发布的文章数量
    */
   public toVO(user: User, postCount: number = 0): UserVO {
     return {
@@ -387,10 +417,7 @@ class UserMappingService {
   /**
    * DO（Domain Object，领域对象）→ VO 列表：批量转换
    */
-  public toVOList(
-    users: User[],
-    postCounts: Map<number, number> = new Map(),
-  ): UserVO[] {
+  public toVOList(users: User[], postCounts: Map<number, number> = new Map()): UserVO[] {
     return users.map((user) => this.toVO(user, postCounts.get(user.id) ?? 0));
   }
 
@@ -414,6 +441,18 @@ class UserMappingService {
  * 【语法点】使用 NestJS 异常类抛出业务异常，由全局 ExceptionFilter 统一处理
  * 【NestJS 设计意图】Service 抛出语义化异常 → Controller 无需 try-catch → Filter 统一格式化
  */
+/* 
+// 自定义业务错误码格式：HTTP状态码 + 业务细分码
+40401  // 404 Not Found - 用户不存在
+40402  // 404 Not Found - 文章不存在
+40403  // 404 Not Found - 订单不存在
+
+40001  // 400 Bad Request - 参数验证失败
+40002  // 400 Bad Request - 业务规则冲突
+
+50301  // 503 Service Unavailable - 外部API调用失败
+50302  // 503 Service Unavailable - 数据库连接失败
+*/
 
 @Injectable()
 class RobustService {
@@ -422,7 +461,7 @@ class RobustService {
     const resource: object | null = { id }; // 模拟查找
     if (!resource) {
       throw new NotFoundException({
-        code: 40401,
+        code: 40401, // 这是一个自定义业务错误码
         message: `资源 ${id} 不存在`,
         resource: 'user',
       });
@@ -440,10 +479,7 @@ class RobustService {
     }
   }
 
-  public async checkPermission(
-    userId: number,
-    resourceId: number,
-  ): Promise<void> {
+  public async checkPermission(userId: number, resourceId: number): Promise<void> {
     // 模式 3：权限不足 → ForbiddenException
     const isOwner: boolean = false; // 模拟权限检查
     if (!isOwner) {
@@ -508,13 +544,13 @@ class RobustService {
 
 // ❌ 错误写法：
 // async createUser(data: CreateUserDto) {
-//   this.prisma.user.create({ data });  // 忘记 await！
+//   this.db.user.create({ data });  // 忘记 await！
 //   return { success: true };  // 实际上用户可能创建失败
 // }
 
 // ✅ 正确写法：
 // async createUser(data: CreateUserDto) {
-//   const user = await this.prisma.user.create({ data });  // 必须 await
+//   const user = await this.db.user.create({ data });  // 必须 await
 //   return user;
 // }
 
@@ -535,7 +571,7 @@ class RobustService {
 //   async create(@Body() body) {
 //     if (!body.email.includes('@')) { ... }  // 验证应在 DTO/Pipe 中
 //     if (body.age < 18) { ... }              // 业务规则应在 Service 中
-//     const user = await this.prisma.user.create({ data: body });  // 数据库操作应在 Service 中
+//     const user = await this.db.user.create({ data: body });  // 数据库操作应在 Service 中
 //     return { code: 200, data: user };       // 响应包装应在 Interceptor 中
 //   }
 // }
