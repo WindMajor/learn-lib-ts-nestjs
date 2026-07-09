@@ -36,7 +36,6 @@ import {
   UnauthorizedException,
   InternalServerErrorException,
   ConflictException,
-  HttpException as NestHttpException,
   UseFilters,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -89,10 +88,7 @@ class BuiltInExceptionsDemo {
 
   // 429 Too Many Requests —— 频率限制
   public throw429(): void {
-    throw new NestHttpException(
-      '请求过于频繁，请稍后再试',
-      HttpStatus.TOO_MANY_REQUESTS,
-    ); // 429
+    throw new HttpException('请求过于频繁，请稍后再试', HttpStatus.TOO_MANY_REQUESTS); // 429
   }
 
   // 500 Internal Server Error —— 未知错误
@@ -117,17 +113,16 @@ class BuiltInExceptionsDemo {
 const exceptionStructureDemo = (): void => {
   const ex1 = new HttpException('禁止访问', HttpStatus.FORBIDDEN);
 
-  // getResponse() 返回响应体
   const response1 = ex1.getResponse();
-  // { statusCode: 403, message: '禁止访问', error: 'Forbidden' }
+  // getResponse() 返回这个异常当初存进去的响应体 { statusCode: 403, message: '禁止访问', error: 'Forbidden' }
 
-  // getStatus() 返回 HTTP 状态码
   const status1: number = ex1.getStatus(); // 403
+  // getStatus() 返回 HTTP 状态码
 
   console.log('默认异常结构:', JSON.stringify(response1));
 
   // 自定义异常体
-  // 不要直接把 { code, message, data } 当作 response，要了解默认结构
+  // 不要直接把 { code, message, data } 当作 response，要了解NestJS返回的默认结构
   // { statusCode: 403, message: '禁止访问' } → 这被 NestJS 封装在响应的 JSON 体中
 };
 
@@ -154,46 +149,83 @@ interface UnifiedErrorResponse {
 class AllExceptionsFilter implements ExceptionFilter {
   public catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
-    const response: Response = ctx.getResponse<Response>();
+    /* 作用是把 NestJS 的通用执行上下文切换为 HTTP 执行上下文。
+    NestJS 的核心设计是跨传输层通用的：同一个 ExceptionFilter 接口既可用于 HTTP，也可用于 WebSocket、微服务等。
+    host.switchToHttp();        // HTTP 上下文
+    host.switchToWs();          // WebSocket 上下文
+    host.switchToRpc();         // 微服务上下文
+    */
+
     const request: Request = ctx.getRequest<Request>();
+    const response: Response = ctx.getResponse<Response>();
+    /* 这两行是从 HTTP 上下文中取出底层的原生请求对象和响应对象
+    目的：异常过滤器一旦捕获异常，就要自己决定返回什么给客户端。这就需要拿到当前请求的响应对象，手动设置状态码并发送JSON
+    */
 
     // 提取异常信息
     let statusCode: number = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: string = '服务器内部错误';
     let errorData: null | Record<string, unknown> = null;
+    /* 先设定一个“最坏情况”的默认值，然后根据异常类型去覆盖。这是一种防御式编程：先假设所有未知异常都是 500，再慢慢收窄到具体异常。 */
 
     if (exception instanceof HttpException) {
+      /* HttpException是NestJS专有的
+      包含信息：HTTP状态码、结构化响应体 
+      专属方法：getStatus()、getResponse()
+      典型场景：业务层主动抛出的 HTTP 异常（401/403/422）
+      */
+
       statusCode = exception.getStatus();
       const exceptionResponse = exception.getResponse();
+      /* exceptionResponse 可能是两种类型：string | object 
+        string: 构造 HttpException 时第一个参数传了字符串（较罕见，某些自定义场景）
+        object: 绝大多数情况，NestJS 内部会包装成对象
+      */
+
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
-      } else if (
-        typeof exceptionResponse === 'object' &&
-        exceptionResponse !== null
-      ) {
+      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const resp = exceptionResponse as Record<string, unknown>;
-        message =
-          (resp['message'] as string[])?.join(', ') ||
-          (resp['message'] as string) ||
-          message;
+        /* 类型断言：object 断言成 Record<string, unknown> 类型 */
+
+        message = (resp['message'] as string[])?.join(', ') || (resp['message'] as string) || message;
+        /* 1 假设是数组  2 假设是字符串  3 兜底默认值 */
+
         errorData = resp;
       }
     } else if (exception instanceof Error) {
+      /* 这里的Error是JS原生的
+      	包含信息：仅 message + stack
+        专属方法：Error.prototype 上的方法
+        典型场景：代码 bug、运行时异常
+      */
+
       message = exception.message;
-      // 开发环境输出堆栈到控制台，生产环境只记录日志
+      // 开发环境输出堆栈到控制台，生产环境不打印到控制台，而是写入日志文件/日志服务（如 ELK、CloudWatch）
       console.error('未捕获异常:', exception.stack);
+      // 客户端只收到 "服务器内部错误"，看不到堆栈
     }
 
     const errorResponse: UnifiedErrorResponse = {
       code: statusCode,
-      message,
+      message, // 等价于 message: message // 完整写法，ES6的简写语法，当属性名和变量名相同时，ES6允许省略 : value
       data: errorData,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: request.url, // 告诉客户端出错的 API 路径是哪个
     };
 
     response.status(statusCode).json(errorResponse);
   }
+  /* 做事流程：
+  1 NestJS 任何层抛出异常 → 这个 catch() 被触发
+  2 识别异常类型（HttpException 还是普通 Error）
+  3 统一组装成 { code, message, data, timestamp, path } 格式
+  4 自己调用 response.json() 发给客户端
+
+  和 NestJS 默认行为的区别：
+    默认的响应格式：{ statusCode, message, error }，固定的三字段
+    自定义的过滤器：完全自定义
+  */
 }
 
 // ============================================================
@@ -210,17 +242,34 @@ class AllExceptionsFilter implements ExceptionFilter {
 class HttpExceptionFilter implements ExceptionFilter {
   public catch(exception: HttpException, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
+
     const response: Response = ctx.getResponse<Response>();
+    /* 返回值：Express/Fastify 的 Response 对象
+      含义：给我本次 HTTP 响应的对象
+    */
+
     const status: number = exception.getStatus();
     const exceptionResponse = exception.getResponse();
+    /* 返回值：异常内部存储的响应体（string | object）
+      含义：给我这个异常当初存进去的响应体
+     */
 
     // 解析 message（可能是字符串或对象）
     const message: string =
       typeof exceptionResponse === 'object' && exceptionResponse !== null
-        ? ((exceptionResponse as Record<string, unknown>)[
-            'message'
-          ] as string) || exception.message
+        ? ((exceptionResponse as Record<string, unknown>)['message'] as string) || exception.message
         : exception.message;
+    /* 
+    exception.message 来自 JavaScript 原生 Error 类，因为继承链是：
+    Error                    ← message 属性定义在这
+      └── IntrinsicException 
+            └── HttpException
+    HttpException 构造函数里会把第一个参数传给父类 Error，Error 将其存储为 .message
+
+    throw new HttpException('禁止访问', 403);
+                              ↑ 这个字符串会赋给 Error.prototype.message
+    exception.message; // '禁止访问'
+    */
 
     const errorResponse: UnifiedErrorResponse = {
       code: status,
@@ -288,21 +337,21 @@ class ControllerWithControllerFilter {
 // 业务错误码体系
 const BusinessErrorCode = {
   // 认证相关
-  UNAUTHORIZED: 40100,
-  TOKEN_EXPIRED: 40101,
-  TOKEN_INVALID: 40102,
+  UNAUTHORIZED: 40100, // 未经授权的
+  TOKEN_EXPIRED: 40101, // 令牌过期
+  TOKEN_INVALID: 40102, // 令牌无效
 
   // 权限相关
-  FORBIDDEN: 40300,
-  INSUFFICIENT_PERMISSION: 40301,
+  FORBIDDEN: 40300, // 权限禁止
+  INSUFFICIENT_PERMISSION: 40301, //  权限不足
 
   // 用户相关
-  USER_NOT_FOUND: 40401,
-  EMAIL_ALREADY_EXISTS: 40901,
-  USERNAME_TAKEN: 40902,
+  USER_NOT_FOUND: 40401, // 未找到用户
+  EMAIL_ALREADY_EXISTS: 40901, // 电子邮件已经存在
+  USERNAME_TAKEN: 40902, // 用户名已被占用
 
   // 验证相关
-  VALIDATION_ERROR: 40001,
+  VALIDATION_ERROR: 40001, // 验证错误
 } as const;
 
 // Vue3 前端 Axios 拦截器消费示例（注释形式展示）
