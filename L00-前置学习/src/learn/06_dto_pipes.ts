@@ -47,7 +47,7 @@ import {
 import { plainToInstance, instanceToPlain, Exclude, Expose, Transform, Type } from 'class-transformer';
 import {
   PipeTransform,
-  Injectable as InjectablePipe,
+  Injectable,
   ArgumentMetadata,
   BadRequestException,
   ValidationPipe,
@@ -56,6 +56,8 @@ import {
   DefaultValuePipe,
   ParseBoolPipe,
   Get,
+  Param,
+  Query,
 } from '@nestjs/common';
 
 // ============================================================
@@ -140,7 +142,7 @@ class UpdateUserDto {
 /**
  * 【Partial 补充对比】
  *
- * 上面 UpdateUserDto 是手工复制字段 + 逐一加 ? 和 @IsOptional()。
+ * 上面 UpdateUserDto 是手工复制字段 + 逐一加?和@IsOptional()
  *
  * Partial<CreateUserDto> 是 TypeScript 内置工具类型，
  * 一键让 CreateUserDto 的所有属性变选填（编译期）：
@@ -198,14 +200,14 @@ class CreateOrderDto {
   public userId!: number;
 
   // 嵌套对象：需要 @ValidateNested 和 @Type
-  @ValidateNested({ each: false }) // false = 验证单个对象
-  @Type(() => AddressDto) // 告诉 transformer 创建 AddressDto 实例
+  @ValidateNested({ each: false }) // 步骤 2：递归验证这个嵌套对象。each是false表示只验证address本身
+  @Type(() => AddressDto) // 步骤1：告诉transformer，创建AddressDto实例，把普通对象转成AddressDto实例
   public shippingAddress!: AddressDto;
 
   // 嵌套数组：each: true 表示验证数组中每一项
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => OrderItemDto)
+  @IsArray() // 步骤3：必须是数组
+  @ValidateNested({ each: true }) // 步骤2：数组里每个元素都递归验证。each是true表示对数组里每个元素调用 validate()。不加 each: true 的话，@ValidateNested 会验证整个数组本身
+  @Type(() => OrderItemDto) // 步骤1：每个元素转成 OrderItemDto 实例
   public items!: OrderItemDto[];
 }
 
@@ -230,10 +232,14 @@ class OrderItemDto {
  * 【NestJS 设计意图】数据脱敏和格式转换应是声明式的，而非在 Service 中手动删字段
  */
 
+/* 
+NestJS 默认是 exposeAll（全部暴露），即：只要没加 @Exclude()，字段都会出现在响应里。
+*/
 class UserResponseDto {
-  // 暴露此字段（在默认 exclude 策略下使用）
+  // 暴露此字段（配合 excludeExtraneousValues: true 或 strategy: 'excludeAll' 使用）
   @Expose()
   public id!: number;
+  /* Expose 单词含义是暴露 */
 
   @Expose()
   public email!: string;
@@ -245,10 +251,29 @@ class UserResponseDto {
   @Exclude()
   public password!: string;
 
-  // 转换：将 Date 转为可读字符串
+  // 转换：将 Date日期对象 转为可读字符串
   @Expose()
   @Transform(({ value }: { value: Date }) => value?.toISOString() ?? null)
   public createdAt!: string;
+  /* 
+  @Transform — 序列化/反序列化时改字段值，只帮你做类型/格式转换，不做验证
+  Date 转字符串、字符串转数字、脱敏手机号、拼接字段等，都靠它
+  { value }: { value: Date } 是解构赋值：
+    写法1（不解构）：@Transform((params: TransformFnParams) => params.value?.toISOString() ?? null)
+    写法2（完整，拿到所有字段）：@Transform(({ value, key, obj, type }: TransformFnParams) => value?.toISOString() ?? null)
+    写法3（最简洁，但只拿到 value）：@Transform(({ value }: { value: Date }) => value?.toISOString() ?? null)
+
+  常用的几个字段
+    value	当前字段的原始值
+    key	字段名（这里 "createdAt"）
+    obj	整个对象实例
+    type	转换方向：plainToClass 或 classToPlain
+  更复杂的案例：
+    @Transform(({ value, obj }) => {
+      // 根据另一个字段的值来决定输出格式
+      return obj.locale === 'zh' ? formatCN(value) : formatISO(value);
+    })
+  */
 
   // 重命名：API 返回 displayName，但数据库字段是 name
   @Expose({ name: 'displayName' })
@@ -265,8 +290,9 @@ const rawUser: Record<string, unknown> = {
 };
 
 // plainToInstance：将普通对象转换为 DTO 实例（执行 @Exclude/@Expose/@Transform）
+/* 把 JSON/数据库查出来的普通对象，转换成指定 class 的实例，并在此过程中执行 @Exclude / @Expose / @Transform 等装饰器。 */
 const userDto: UserResponseDto = plainToInstance(UserResponseDto, rawUser, {
-  excludeExtraneousValues: true, // 排除 DTO 中未定义的属性
+  excludeExtraneousValues: true, // 显式开启：只保留 @Expose 的字段
 });
 
 // instanceToPlain：将 DTO 实例转换回普通对象（准备发送给前端）
@@ -286,16 +312,19 @@ console.log('序列化后（password 被排除）:', JSON.stringify(response));
  */
 
 class PipeDemoController {
+  @Get(':id')
   // ParseIntPipe: 将字符串 "123" 转为数字 123，非数字则抛 400
   public findOne(@Param('id', ParseIntPipe) id: number): void {
     console.log(`id 类型: ${typeof id}`); // number，不是 string
   }
 
-  // ParseUUIDPipe: 验证参数是否为合法的 UUID
+  @Get('uuid/:uuid')
+  // ParseUUIDPipe: 验证参数是否为合法的 UUID，如果非法抛400
   public findByUuid(@Param('uuid', ParseUUIDPipe) uuid: string): void {
     console.log(`UUID: ${uuid}`);
   }
 
+  @Get()
   // DefaultValuePipe: 如果查询参数未传，使用默认值
   public findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -305,7 +334,7 @@ class PipeDemoController {
   }
 
   // 管道组合：DefaultValuePipe → ParseIntPipe（管道按从左到右顺序执行）
-  @Get()
+  @Get('list')
   public list(@Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number): void {
     // 如果没有传 page 参数：
     // 1. DefaultValuePipe 注入默认值 "1"
@@ -313,9 +342,6 @@ class PipeDemoController {
     console.log(`page: ${page} (type: ${typeof page})`);
   }
 }
-
-// 避免 TS 报错，声明 @Param @Query 本地引用
-import { Param, Query } from '@nestjs/common';
 
 // ============================================================
 // 示例 5：全局 ValidationPipe 配置
@@ -330,7 +356,7 @@ const globalValidationPipeConfig = {
   // whitelist: true —— 自动剥离 DTO 中未定义的属性（安全关键选项）
   whitelist: true,
 
-  // forbidNonWhitelisted: true —— 如果请求体包含 DTO 中未定义的属性，直接抛 400
+  // forbidNonWhitelisted: true —— 禁止非白名单里的属性，如果请求体包含 DTO 中未定义的属性，直接抛 400
   // 更严格的安全策略：防止客户端传入恶意字段
   forbidNonWhitelisted: true,
 
@@ -343,15 +369,16 @@ const globalValidationPipeConfig = {
   transformOptions: {
     enableImplicitConversion: true,
   },
+  /* Implicit 隐式  Conversion 转换 */
 
-  // disableErrorMessages: true —— 生产环境可关闭详细错误信息（防止信息泄露）
   disableErrorMessages: false,
+  // disableErrorMessages: true —— 生产环境可关闭详细错误信息（防止信息泄露）
 
-  // validationError.target: false —— 不在错误中暴露原始输入数据
   validationError: {
     target: false,
     value: true,
   },
+  // validationError.target: false —— 不在错误中暴露原始输入数据
 } as const;
 
 /**
@@ -375,7 +402,7 @@ const globalValidationPipeConfig = {
  */
 
 // 自定义管道：将字符串转为 Trim 后的字符串，并限制长度
-@InjectablePipe()
+@Injectable()
 class TrimAndLengthPipe implements PipeTransform<string, string> {
   constructor(
     private readonly minLength: number,
@@ -383,7 +410,7 @@ class TrimAndLengthPipe implements PipeTransform<string, string> {
   ) {}
 
   public transform(value: string, metadata: ArgumentMetadata): string {
-    // metadata.type 告诉我们这个参数来自 body/param/query/custom
+    // metadata.type 告诉我们这个参数类别，是来自 body/param/query/custom
     console.log(`[TrimAndLengthPipe] 处理 ${metadata.type} 参数 "${metadata.data}"`);
 
     if (typeof value !== 'string') {
@@ -405,14 +432,14 @@ class TrimAndLengthPipe implements PipeTransform<string, string> {
 }
 
 // 自定义管道：将逗号分隔的字符串转为数组
-@InjectablePipe()
+@Injectable()
 class ParseCommaSeparatedPipe implements PipeTransform<string, string[]> {
   public transform(value: string, _metadata: ArgumentMetadata): string[] {
     if (!value) return [];
     return value
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter(Boolean);
+      .split(',') // 1. 按逗号切开
+      .map((s: string) => s.trim()) // 2. 每项去前后空格
+      .filter(Boolean); // 3. 过滤空字符串 等价于 .filter(s => Boolean(s) === true)  // 因为空字符串 "" 转布尔是 false，所以被过滤掉
   }
 }
 
@@ -453,7 +480,7 @@ class CustomPipeDemoController {
 
 // 演示：运行时验证 DTO
 const demonstrateDtoValidation = async (): Promise<void> => {
-  const invalidDto = plainToInstance(CreateUserDto, {
+  const invalidDto: CreateUserDto = plainToInstance(CreateUserDto, {
     name: 'A', // 太短（少于 2 字符）
     email: 'invalid', // 不是合法邮箱
     password: '123', // 不符合密码强度
@@ -518,20 +545,20 @@ const demonstrateDtoValidation = async (): Promise<void> => {
 // // Controller 中正常使用即可
 
 // ============================================================
-// ❌ 常见错误 3：@IsNumber() 验证前端传来的数字字符串失败
+// ❌ 常见错误 3：@IsInt() 验证前端传来的数字字符串失败
 // ============================================================
 
 /**
- * 【错误现象】前端传 { age: "25" }（字符串），但 DTO 用 @IsNumber() 验证失败
- * 【错误原因】HTTP 请求中的值默认都是字符串，@IsNumber() 检查值是 number 类型
+ * 【错误现象】前端传 { age: "25" }（字符串），但 DTO 用 @IsInt() 验证失败
+ * 【错误原因】HTTP 请求中的值默认都是字符串，@IsInt() 检查值是整数类型
  * 【正确写法】
  *   方案 1：开启 transform: true + enableImplicitConversion（自动转换）
- *   方案 2：使用 @Type(() => Number) + @IsNumber()
+ *   方案 2：使用 @Type(() => Number) + @IsInt()（年龄是整数）
  */
 
 // ❌ 错误写法：
 // class BadNumberDto {
-//   @IsNumber()              // 前端传 "25" 字符串 → 验证失败
+//   @IsInt()                 // 前端传 "25" 字符串 → 没转换直接验证失败
 //   age: number;
 // }
 
