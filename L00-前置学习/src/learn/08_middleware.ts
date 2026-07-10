@@ -21,12 +21,7 @@
  *   - CORS 中间件处理跨域，对应前端 Vite proxy 配置
  */
 
-import {
-  Injectable,
-  Module,
-  NestMiddleware,
-  MiddlewareConsumer,
-} from '@nestjs/common';
+import { Injectable, Module, NestMiddleware, MiddlewareConsumer } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 
 // ============================================================
@@ -40,25 +35,43 @@ import type { Request, Response, NextFunction } from 'express';
  * 【注意】函数式中间件不能注入依赖，因为不在 DI 容器中
  */
 
-const loggerMiddleware = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void => {
+const loggerMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+  /* 这3个参数都是Express的，不是NestJS的，这是 NestJS 故意的设计选择。
+  为什么中间件不封装一层？
+    1 兼容性——所有现有的 Express 中间件（cors、helmet、morgan、compression……）拿来直接用，零适配成本
+    2 没必再造轮子——中间件是 HTTP 层最底下的概念，Express 的 (req, res, next) 已经是事实标准了
+    3 按需抽象——NestJS 只在 Controller、Provider、Guard 等上层做了自己的抽象，中间件层保持原生
+  */
+
   const startTime: number = Date.now();
   const { method, url } = req;
+  /* 解构赋值，可以从对象里选择几个属性进行解构 */
 
   console.log(`[${new Date().toISOString()}] ${method} ${url} - 开始处理`);
 
   // 监听响应完成事件，计算耗时
   res.on('finish', () => {
+    /* 这里监听了finish事件，这个事件是Node.js底层的流Stream机制自动触发的 */
     const duration: number = Date.now() - startTime;
-    console.log(
-      `[${new Date().toISOString()}] ${method} ${url} - ${res.statusCode} - ${duration}ms`,
-    );
+    console.log(`[${new Date().toISOString()}] ${method} ${url} - ${res.statusCode} - ${duration}ms`);
   });
+  /* 
+  on 是 Node.js的 EventEmitter（事件发射器）的方法，用于注册事件监听器，语法：emitter.on('事件名', 回调函数);
+  继承链：res（http.ServerResponse）继承自 stream.Writable → EventEmitter
+  'finish'事件何时触发：当响应数据全部写入底层 TCP 套接字并发送完毕时触发。也就是说，客户端的响应已经完整发出去了。
+  */
 
   next(); // 必须调用 next()，否则请求会挂起
+  /* 这是Express中间件机制的核心：把请求交给下一个处理环节，形成流水线，每个中间件都拿到 (req, res, next)
+    请求进来
+    │
+    ▼
+  [中间件1] ──next()──▶ [中间件2] ──next()──▶ [路由处理函数]
+                                                      │
+                                                      ▼
+                                                    返回响应
+  
+  */
 };
 
 // ============================================================
@@ -89,9 +102,8 @@ class LoggerService_08 implements Logger_08 {
 
 @Injectable()
 class RequestLoggerMiddleware implements NestMiddleware {
-  constructor(
-    private readonly logger: LoggerService_08, // 可以注入依赖！
-  ) {}
+  constructor(private readonly logger: LoggerService_08) {}
+  /* 构造函数参数属性 */
 
   public use(req: Request, res: Response, next: NextFunction): void {
     this.logger.log(`${req.method} ${req.url}`);
@@ -124,15 +136,15 @@ class BodySizeLimitMiddleware implements NestMiddleware {
   private readonly maxSize: number;
 
   constructor() {
-    // 默认 10MB（可在模块配置中通过 forRoot 传入）
-    this.maxSize = 10 * 1024 * 1024;
+    this.maxSize = 10 * 1024 * 1024; // 默认 10MB（可在模块配置中通过 forRoot 传入）
   }
 
   public use(req: Request, res: Response, next: NextFunction): void {
     const contentLength: string | undefined = req.headers['content-length'];
 
     if (contentLength) {
-      const size: number = parseInt(contentLength, 10);
+      const size: number = parseInt(contentLength, 10); /* 第2个参数10表示是十进制 */
+
       if (size > this.maxSize) {
         res.status(413).json({
           code: 413,
@@ -141,10 +153,15 @@ class BodySizeLimitMiddleware implements NestMiddleware {
           timestamp: new Date().toISOString(),
           path: req.url,
         });
-        return; // 不调用 next()，直接响应
+        /* 这一句就是返回给前端的完整的 HTTP 响应 */
+
+        return; // 就此停下，拦截住，不让调用next()
+        /* 
+        如果不加 return 会怎样？
+        响应已经发过一次 413 了，next()又触发下游处理，可能再尝试发一次响应 → "Cannot set headers after they are sent" 报错。
+        */
       }
     }
-
     next();
   }
 }
@@ -167,6 +184,8 @@ class AuthMiddleware implements NestMiddleware {
 
     // 简化示例：实际项目中应使用 JWT Service 验证
     if (!authHeader) {
+      /* undefined null '' 这3种情况会进入这里，直接返回401 */
+
       res.status(401).json({
         code: 401,
         message: '请先登录',
@@ -177,10 +196,50 @@ class AuthMiddleware implements NestMiddleware {
       return;
     }
 
-    // 提取 Token 并附加到 req 对象上（供后续 Controller/Service 使用）
-    // 在 Express 中扩展 Request 类型：
-    // declare global { namespace Express { interface Request { user?: User; } } }
+    // 提取 Token 比如userId 并附加到 req 对象上（供后续 Controller/Service 使用）
     (req as Request & { userId?: number }).userId = 1;
+    /* 
+    类型断言+属性挂载：在 TypeScript 层面"骗过"类型检查器，往 req 对象上附加一个原本不存在的 userId 属性。
+    目的：中间件处理后的数据，传递给下游。类比一条流水线：
+      [请求进来]
+          │
+          ▼
+      [AuthMiddleware]  ← 解析 Token，得到 userId=1
+          │              把 userId 贴在 req 上，像贴一张便签纸
+          │  req.userId = 1
+          ▼
+      [下一个中间件]   ← 可以直接读 req.userId
+          ▼
+      [Controller]    ← 可以直接读 req.userId
+          ▼
+      [Service]       ← 拿到 userId 做业务逻辑，不用重新解析 Token
+
+    原理：TypeScript 的 Express.Request 类型里没有 userId，直接写 req.userId = 1 会报类型错误。用 as 断言就绕过去了。
+        ┌─────────────────────────────────┐
+        │  编译时（骗 TypeScript）            │
+        │  req as Request & { userId?: number } │
+        │  ↑ 断言：这个 req 具有 userId 属性     │
+        └─────────────────────────────────┘
+                        │
+                        ▼
+        ┌─────────────────────────────────┐
+        │  运行时（真实操作）                  │
+        │  .userId = 1                     │
+        │  ↑ JS 里随便给对象加属性，没限制     │
+        └─────────────────────────────────┘
+
+    
+    更规范的做法是声明合并，在全局类型声明文件里扩展 Express 的类型：
+      // global.d.ts
+      declare global {
+        namespace Express {
+          interface Request {
+            userId?: number;
+          }
+        }
+      }
+      之后所有文件里都能直接写：req.userId = 1;  // ✅ 类型安全，不需要 as 断言
+    */
 
     next();
   }
@@ -201,26 +260,67 @@ class AppModule_08 {
     consumer
       // 应用中间件
       .apply(
-        loggerMiddleware, // 函数式中间件
+        loggerMiddleware, // 示例1的函数式中间件
         BodySizeLimitMiddleware, // 类中间件
       )
-      // 排除某些路径（如健康检查不需要日志）
+      // 排除某些路径（如健康检查不需要日志），可选的，不写这个方法也可以
       .exclude(
-        '/health',
-        '/metrics',
-        { path: '/api/docs', method: 0 }, // 排除特定方法和路径（method: 0 = ALL）
+        '/health', // 心跳健康检查
+        '/metrics', // 指标检查
+        { path: '/api/docs', method: 5 }, // 排除特定方法和路径（method: 5 = ALL）
+        /* method:0 只排除某种HTTP方法
+        查了 RequestMethod 枚举源码：
+          GET = 0,  POST = 1,  PUT = 2,  DELETE = 3,
+          PATCH = 4,  ALL = 5,  OPTIONS = 6,  HEAD = 7, ...
+
+        等价写法：
+          { path: '/api/docs', method: RequestMethod.ALL }  // ALL = 5
+          { path: '/api/docs' } // 或者直接省掉 method
+        */
       )
-      // 指定中间件应用的路径
+      // NestJS 中间件配置的收尾方法：指定中间件对哪些路由生效。这个方法必须写，不然中间件都不生效
       .forRoutes(
-        'users', // 路径前缀匹配：/users、/users/123 等
+        'users', // 路径前缀匹配：/users、/users/123 等所有方法等价于 { path: 'users', method: 5 }
         'posts',
-        { path: 'admin', method: 0 }, // 所有方法的 /admin 路径
+        { path: 'admin', method: 0 }, // GET /admin
+        { path: 'admin', method: 1 }, // POST /admin
       );
+    /* 
+    目的：将前面 .apply() 注册的中间件，限定在特定的 URL 范围内，而不是全局生效：
+      .apply(loggerMiddleware)   // ← "派哪些保安"
+      .forRoutes('users', 'posts') // ← "守哪些门"
+      apply() 只是"选人"，forRoutes() 才是"分岗"
+
+    与 exclude() 的关系：
+      forRoutes 画一个大圈（哪些路径要管）
+          exclude 在圈里挖几个洞（哪些路径免检）
+      ┌──────────────────────────┐
+      │  forRoutes: users, posts  │
+      │   ┌─────┐                 │
+      │   │health│ ← exclude 挖掉的 │
+      │   └─────┘                 │
+      │   ✓ /users/123            │
+      │   ✓ /posts/456            │
+      └──────────────────────────┘
+      所有请求
+          ├── /health      → ❌ exclude 拦截（与 forRoutes 无关）
+          ├── /metrics     → ❌ exclude 拦截
+          ├── /api/docs    → ❌ exclude 拦截
+          ├── /users/health → ✅ forRoutes 命中了，exclude 没拦住
+          ├── /users/123   → ✅
+          └── /posts/456   → ✅
+      */
 
     // 单独为 /admin 路径配置鉴权中间件
     consumer.apply(AuthMiddleware).forRoutes(
       { path: 'admin/(.*)', method: 0 }, // 所有 /admin 及其子路径
     );
+    /* 
+    'admin' 默认的前缀匹配
+    'admin/(.*)'  通配符匹配，匹配 /admin 及其所有子路径
+    (.*) 是通配符，显式告诉 NestJS"admin 下的所有子级路径我都要"
+    虽然默认前缀匹配也能匹配 GET /admin/users，但(.*) 写法更保险、更明确。
+    */
   }
 }
 
@@ -230,8 +330,21 @@ class AppModule_08 {
 
 /**
  * 【场景】理解三层"拦截器"的选择标准
- * 【NestJS 执行顺序】Middleware → Guard → Interceptor(before) → Pipe → Controller
- *                                             → Service → Interceptor(after) → ExceptionFilter
+ * 【NestJS 执行顺序】
+ *    Middleware → Guard → Interceptor(before) → Pipe
+ *                                                │
+ *                                                ▼
+ *                                          Controller → Service
+ *                                                │
+ *                                      ┌─────────┴─────────┐
+ *                                      ▼                   ▼
+ *                                Interceptor(after)    ExceptionFilter
+ *                                (正常响应)              (异常捕获)
+ *
+ *  总结："门卫先拦（Middleware），岗哨再查（Guard），拦截器前后包（Interceptor），管道验参数（Pipe），最后干活的是控制器（Controller）和服务（Service）"
+ *
+ *  1 ExceptionFilter 不止在末尾，实际上它全程待命，Guard、Pipe、Controller 任意一环抛异常，它都能截住
+ *  2 Interceptor(after) 和 ExceptionFilter 是分支关系——正常走 Interceptor(after) 返回响应，出错走 ExceptionFilter 返回错误
  *
  * 【选择标准】
  *   使用中间件（Middleware）当：
@@ -255,9 +368,13 @@ class AppModule_08 {
 @Injectable()
 class OrderVerificationMiddleware implements NestMiddleware {
   public use(_req: Request, _res: Response, next: NextFunction): void {
-    console.log('1. Middleware 执行');
-    next();
-    console.log('8. Middleware 后置（next 之后）'); // 实际上中间件不能在后置阶段执行
+    console.log('1. Middleware 执行'); // ① 请求进来，最先执行
+    next(); // ② 调用下游 ──▶ Guard(2) → Interceptor(3) → Pipe(4) → Controller(5) → Service → Interceptor(6) → 响应返回
+    console.log('8. Middleware 后置（next 之后）'); // ③ 下游整个链跑完，next() 才返回，然后执行这一行
+    /* 
+    虽然最后这一行代码在 next() 之后能执行，但此时响应已经发出去了，你没法再修改响应内容。
+    要真正在响应前后做处理（比如包装返回值），应该用 Interceptor 而非 Middleware。
+    */
   }
 }
 
